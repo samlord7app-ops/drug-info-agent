@@ -26,10 +26,10 @@ app = Flask(__name__, template_folder='templates', static_folder='static')
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 app.jinja_env.auto_reload = True
 
-# 啟用 CORS 跨來源資源共享（支援全域 API 跨來源請求與 OPTIONS 預檢）
+# 啟用 CORS 跨來源資源共享（支援全域 API 跨來源請求、動態 Origin 反射與 OPTIONS 預檢）
 try:
     from flask_cors import CORS
-    CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=False)
+    CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 except ImportError:
     pass
 
@@ -38,18 +38,33 @@ def handle_preflight():
     """處理瀏覽器跨來源 OPTIONS 預檢請求 (Preflight)，解決前端 fetch/axios 觸發的 CORS 攔截"""
     if request.method == "OPTIONS":
         response = app.make_default_options_response()
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin'
+        origin = request.headers.get('Origin')
+        if origin:
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+        else:
+            response.headers['Access-Control-Allow-Origin'] = '*'
+        
+        req_headers = request.headers.get('Access-Control-Request-Headers')
+        response.headers['Access-Control-Allow-Headers'] = req_headers if req_headers else '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD'
         response.headers['Access-Control-Max-Age'] = '86400'
         return response
 
 @app.after_request
 def add_cors_headers(response):
-    """為所有 HTTP 回應自動附加標準 CORS 標頭，確保前端取得 Access-Control-Allow-Origin: *"""
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin'
+    """為所有 HTTP 回應自動附加標準 CORS 標頭，動態反射 Origin 支援 credentials 與所有請求來源"""
+    origin = request.headers.get('Origin')
+    if origin:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+    else:
+        response.headers['Access-Control-Allow-Origin'] = '*'
+    
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD'
+    req_headers = request.headers.get('Access-Control-Request-Headers')
+    response.headers['Access-Control-Allow-Headers'] = req_headers if req_headers else '*'
+    response.headers['Access-Control-Expose-Headers'] = '*'
     return response
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -2228,16 +2243,50 @@ def fetch_tfda_drug_info(query_str: str) -> dict:
 # Web Routes
 # ==========================================
 
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'], strict_slashes=False)
 def index():
+    if request.method == 'POST':
+        return api_drug_insert()
+    if request.args.get('drug_name') or request.args.get('q') or request.args.get('name'):
+        return api_drug_insert()
+    if request.headers.get('Accept') == 'application/json' or request.args.get('format') == 'json':
+        return api_health()
     return render_template('drug_search.html')
 
 
-@app.route('/api/candidates')
+@app.route('/health', methods=['GET', 'POST'], strict_slashes=False)
+@app.route('/api/health', methods=['GET', 'POST'], strict_slashes=False)
+@app.route('/api', methods=['GET', 'POST'], strict_slashes=False)
+def api_health():
+    if request.method == 'POST' and (request.get_json(silent=True) or request.form):
+        return api_drug_insert()
+    return jsonify({
+        "status": "ok",
+        "service": "drug-info-agent",
+        "message": "衛福部藥品仿單極速智慧查詢 API 正常運作中",
+        "version": "1.0.0",
+        "cors": "enabled",
+        "endpoints": [
+            {"path": "/api/drug_insert", "methods": ["GET", "POST"], "description": "仿單結構化查詢"},
+            {"path": "/api/candidates", "methods": ["GET", "POST"], "description": "藥品候選規格檢索"},
+            {"path": "/api/ask", "methods": ["GET", "POST"], "description": "雙軌臨床諮詢問答"}
+        ]
+    })
+
+
+@app.route('/api/candidates', methods=['GET', 'POST'], strict_slashes=False)
 def api_candidates():
     """輸完藥名後先檢索候選仿單清單，供使用者確認是哪一個仿單資料後再開始進行分析"""
     try:
-        q = request.args.get('q', '').strip()
+        q = request.args.get('q') or request.args.get('drug_name') or request.args.get('name') or ''
+        if not q and request.method == 'POST':
+            req_json = request.get_json(silent=True) or {}
+            q = (req_json.get('q') or req_json.get('drug_name') or req_json.get('name') or 
+                 req_json.get('query') or req_json.get('keyword') or req_json.get('message') or '')
+            if not q and request.form:
+                q = (request.form.get('q') or request.form.get('drug_name') or 
+                     request.form.get('name') or request.form.get('query') or '')
+        q = str(q).strip()
         if not q:
             return jsonify({"success": False, "candidates": [], "error": "請提供藥品名稱或許可證字號"})
 
@@ -2281,9 +2330,14 @@ def api_candidates():
         return jsonify({"success": False, "error": str(e), "candidates": []})
 
 
-@app.route('/api/drug_insert', methods=['GET', 'POST'])
-@app.route('/api/drug_info', methods=['GET', 'POST'])
-@app.route('/api/insert', methods=['GET', 'POST'])
+@app.route('/api/drug_insert', methods=['GET', 'POST'], strict_slashes=False)
+@app.route('/api/drug_info', methods=['GET', 'POST'], strict_slashes=False)
+@app.route('/api/insert', methods=['GET', 'POST'], strict_slashes=False)
+@app.route('/api/drug', methods=['GET', 'POST'], strict_slashes=False)
+@app.route('/api/drugs', methods=['GET', 'POST'], strict_slashes=False)
+@app.route('/api/query', methods=['GET', 'POST'], strict_slashes=False)
+@app.route('/api/chat', methods=['GET', 'POST'], strict_slashes=False)
+@app.route('/chat', methods=['GET', 'POST'], strict_slashes=False)
 def api_drug_insert():
     """
     仿單查詢專屬 HTTP API 端點：
@@ -2295,12 +2349,19 @@ def api_drug_insert():
         if request.method == 'POST':
             req_json = request.get_json(silent=True) or {}
             if req_json:
-                drug_name = req_json.get('drug_name') or req_json.get('q') or req_json.get('name') or ''
+                drug_name = (req_json.get('drug_name') or req_json.get('q') or 
+                             req_json.get('name') or req_json.get('query') or 
+                             req_json.get('keyword') or req_json.get('message') or 
+                             req_json.get('text') or req_json.get('prompt') or '')
             if not drug_name and request.form:
-                drug_name = request.form.get('drug_name') or request.form.get('q') or request.form.get('name') or ''
+                drug_name = (request.form.get('drug_name') or request.form.get('q') or 
+                             request.form.get('name') or request.form.get('query') or 
+                             request.form.get('keyword') or request.form.get('message') or '')
         
         if not drug_name:
-            drug_name = request.args.get('drug_name') or request.args.get('q') or request.args.get('name') or ''
+            drug_name = (request.args.get('drug_name') or request.args.get('q') or 
+                         request.args.get('name') or request.args.get('query') or 
+                         request.args.get('keyword') or '')
             
         drug_name = str(drug_name).strip()
         if not drug_name:
@@ -2466,12 +2527,18 @@ def api_download_box():
     return api_download_appearance()
 
 
-@app.route('/api/ask', methods=['POST'])
+@app.route('/api/ask', methods=['GET', 'POST'], strict_slashes=False)
 def api_ask():
     """零 API 本地智慧臨床問答：四智能體協同 (意圖路由、章節鎖定、臨床抽取與推論生成)"""
     try:
-        data = request.json or {}
-        question = data.get('question', '').strip()
+        data = {}
+        if request.method == 'POST':
+            data = request.get_json(silent=True) or {}
+            if not data and request.form:
+                data = request.form.to_dict()
+        if not data:
+            data = request.args.to_dict()
+        question = (data.get('question') or data.get('q') or data.get('prompt') or data.get('message') or '').strip()
         q_id = data.get('q_id')
         drug_info = data.get('drug_info', {}) or data.get('drug_data', {})
 
@@ -2543,6 +2610,39 @@ def api_ask():
             "patient_answer": f"臨床問答模組處理錯誤：{str(e)}",
             "professional_answer": f"系統錯誤詳細資訊：{str(e)}"
         })
+
+
+@app.errorhandler(404)
+def handle_404(e):
+    return jsonify({
+        "success": False,
+        "error": "API 路徑不存在 (Not Found)",
+        "path": request.path,
+        "supported_apis": [
+            "/api/drug_insert",
+            "/api/candidates",
+            "/api/ask",
+            "/api/health"
+        ]
+    }), 404
+
+
+@app.errorhandler(405)
+def handle_405(e):
+    return jsonify({
+        "success": False,
+        "error": f"不支援的 HTTP 方法：{request.method} for {request.path}",
+        "path": request.path
+    }), 405
+
+
+@app.errorhandler(500)
+def handle_500(e):
+    return jsonify({
+        "success": False,
+        "error": "伺服器內部執行錯誤 (Internal Server Error)",
+        "detail": str(e)
+    }), 500
 
 
 if __name__ == '__main__':
