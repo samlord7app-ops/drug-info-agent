@@ -179,7 +179,30 @@ FAST_INDEX = {
     "帝拔癲注射劑": {"cname": "帝拔癲凍晶注射劑小瓶", "ename": "DEPAKINE LYOPHILIZED INJECTION 400MG/VIAL", "lic": "衛署藥輸字第022395號"},
     "帝拔癲凍晶注射劑": {"cname": "帝拔癲凍晶注射劑小瓶", "ename": "DEPAKINE LYOPHILIZED INJECTION 400MG/VIAL", "lic": "衛署藥輸字第022395號"},
     "valproate": {"cname": "帝拔癲凍晶注射劑小瓶", "ename": "DEPAKINE LYOPHILIZED INJECTION 400MG/VIAL", "lic": "衛署藥輸字第022395號"},
-    "022395": {"cname": "帝拔癲凍晶注射劑小瓶", "ename": "DEPAKINE LYOPHILIZED INJECTION 400MG/VIAL", "lic": "衛署藥輸字第022395號"}
+    "022395": {"cname": "帝拔癲凍晶注射劑小瓶", "ename": "DEPAKINE LYOPHILIZED INJECTION 400MG/VIAL", "lic": "衛署藥輸字第022395號"},
+
+    # 易週糖 / Trulicity / Dulaglutide
+    "trulicity": {"cname": "易週糖注射劑4.5公絲/0.5公撮", "ename": "TRULICITY injection 4.5 mg/0.5 mL", "lic": "衛部菌疫輸字第001200號"},
+    "易週糖": {"cname": "易週糖注射劑4.5公絲/0.5公撮", "ename": "TRULICITY injection 4.5 mg/0.5 mL", "lic": "衛部菌疫輸字第001200號"},
+    "dulaglutide": {"cname": "易週糖注射劑4.5公絲/0.5公撮", "ename": "TRULICITY injection 4.5 mg/0.5 mL", "lic": "衛部菌疫輸字第001200號"},
+    "001200": {"cname": "易週糖注射劑4.5公絲/0.5公撮", "ename": "TRULICITY injection 4.5 mg/0.5 mL", "lic": "衛部菌疫輸字第001200號"},
+
+    # 紐佳樂 / Nucala / Mepolizumab
+    "nucala": {"cname": "紐佳樂凍晶注射劑", "ename": "Nucala Powder for Solution for Injection", "lic": "衛部菌疫輸字第001007號"},
+    "紐佳樂": {"cname": "紐佳樂凍晶注射劑", "ename": "Nucala Powder for Solution for Injection", "lic": "衛部菌疫輸字第001007號"},
+    "滅喘樂": {"cname": "紐佳樂凍晶注射劑", "ename": "Nucala Powder for Solution for Injection", "lic": "衛部菌疫輸字第001007號"},
+    "mepolizumab": {"cname": "紐佳樂凍晶注射劑", "ename": "Nucala Powder for Solution for Injection", "lic": "衛部菌疫輸字第001007號"},
+    "001007": {"cname": "紐佳樂凍晶注射劑", "ename": "Nucala Powder for Solution for Injection", "lic": "衛部菌疫輸字第001007號"},
+
+    # 胰妥讚 / Ozempic / Semaglutide
+    "ozempic": {"cname": "胰妥讚注射劑", "ename": "Ozempic solution for injection", "lic": "衛部菌疫輸字第001107號"},
+    "胰妥讚": {"cname": "胰妥讚注射劑", "ename": "Ozempic solution for injection", "lic": "衛部菌疫輸字第001107號"},
+    "semaglutide": {"cname": "胰妥讚注射劑", "ename": "Ozempic solution for injection", "lic": "衛部菌疫輸字第001107號"},
+
+    # 猛健樂 / Mounjaro / Tirzepatide
+    "mounjaro": {"cname": "猛健樂注射劑", "ename": "Mounjaro solution for injection", "lic": "衛部菌疫輸字第001248號"},
+    "猛健樂": {"cname": "猛健樂注射劑", "ename": "Mounjaro solution for injection", "lic": "衛部菌疫輸字第001248號"},
+    "tirzepatide": {"cname": "猛健樂注射劑", "ename": "Mounjaro solution for injection", "lic": "衛部菌疫輸字第001248號"}
 }
 
 
@@ -1799,7 +1822,7 @@ def fetch_tfda_drug_info(query_str: str) -> dict:
             manufacturer = top[6] or "原廠藥商"
             if len(top) > 7 and top[7]:
                 raw_revision_date = top[7]
-        elif re.search(r'衛[署部]藥[製輸]字第?\s*\d+\s*號?', clean_q):
+        elif re.search(r'衛[署部](?:藥|菌疫)[製輸]字第?\s*\d+\s*號?', clean_q):
             lic_id = re.sub(r'\s+', '', clean_q)
             if not lic_id.endswith('號'): lic_id += '號'
             cname = lic_id
