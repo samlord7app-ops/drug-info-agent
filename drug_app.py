@@ -26,6 +26,32 @@ app = Flask(__name__, template_folder='templates', static_folder='static')
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 app.jinja_env.auto_reload = True
 
+# 啟用 CORS 跨來源資源共享（支援全域 API 跨來源請求與 OPTIONS 預檢）
+try:
+    from flask_cors import CORS
+    CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=False)
+except ImportError:
+    pass
+
+@app.before_request
+def handle_preflight():
+    """處理瀏覽器跨來源 OPTIONS 預檢請求 (Preflight)，解決前端 fetch/axios 觸發的 CORS 攔截"""
+    if request.method == "OPTIONS":
+        response = app.make_default_options_response()
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin'
+        response.headers['Access-Control-Max-Age'] = '86400'
+        return response
+
+@app.after_request
+def add_cors_headers(response):
+    """為所有 HTTP 回應自動附加標準 CORS 標頭，確保前端取得 Access-Control-Allow-Origin: *"""
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Origin'
+    return response
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(BASE_DIR, "drug_cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
