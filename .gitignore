@@ -40,6 +40,11 @@ desktop.ini
 # Environment Variables & Secrets
 .env
 .env.local
+serviceAccountKey.json
+firebase_credentials.json
+*serviceAccountKey*.json
+*firebase*.json
+credentials.json
 
 # Legacy scheduler module files (retained locally, excluded from drug-info-agent)
 app.py

@@ -2434,17 +2434,43 @@ def patient_ui():
 def api_health():
     if request.method == 'POST' and (request.get_json(silent=True) or request.form):
         return api_drug_insert()
+    from firestore_logger import is_firestore_enabled, COLLECTION_NAME
+    fs_enabled = is_firestore_enabled()
     return jsonify({
         "status": "ok",
         "service": "drug-info-agent",
         "message": "衛福部藥品仿單極速智慧查詢 API 正常運作中",
         "version": "1.0.0",
         "cors": "enabled",
+        "firestore_logging": "connected" if fs_enabled else "standby",
+        "firestore_collection": COLLECTION_NAME,
         "endpoints": [
-            {"path": "/api/drug_insert", "methods": ["GET", "POST"], "description": "仿單結構化查詢"},
+            {"path": "/api/drug_insert", "methods": ["GET", "POST"], "description": "仿單結構化查詢與病患臨床問答"},
             {"path": "/api/candidates", "methods": ["GET", "POST"], "description": "藥品候選規格檢索"},
-            {"path": "/api/ask", "methods": ["GET", "POST"], "description": "雙軌臨床諮詢問答"}
+            {"path": "/api/ask", "methods": ["GET", "POST"], "description": "雙軌臨床諮詢問答"},
+            {"path": "/api/firestore/status", "methods": ["GET"], "description": "Firestore 自動存檔連線狀態檢視"}
         ]
+    })
+
+
+@app.route('/api/firestore/status', methods=['GET'], strict_slashes=False)
+def api_firestore_status():
+    """檢查 Firestore 查詢自動存檔功能之連線狀態與配置說明"""
+    from firestore_logger import is_firestore_enabled, COLLECTION_NAME
+    enabled = is_firestore_enabled()
+    return jsonify({
+        "firestore_enabled": enabled,
+        "status": "connected" if enabled else "standby",
+        "collection": COLLECTION_NAME,
+        "message": (
+            f"Firestore 已成功連線，所有查詢記錄將自動非同步寫入 '{COLLECTION_NAME}' 集合。"
+            if enabled else
+            "Firestore 自動存檔功能目前處於待命狀態（尚未設定 Firebase 憑證，不影響主查詢服務）。"
+        ),
+        "setup_guide": {
+            "render_cloud": "請至 Render.com Dashboard -> Environment -> 新增 Key 'FIREBASE_CREDENTIALS_JSON'，Value 貼上 Firebase Service Account 金鑰 JSON 全文。",
+            "local_dev": "請將 Firebase 控制台下載的 serviceAccountKey.json 放置於專案根目錄。"
+        }
     })
 
 
@@ -2550,6 +2576,21 @@ def api_drug_insert():
         # 若前端同時送出藥名與諮詢問題類別，直接回傳仿單連結及一般病患白話易懂版問題回覆
         if drug_name and category:
             res = answer_patient_drug_question(drug_name, category)
+            try:
+                from firestore_logger import log_query_to_firestore
+                client_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
+                user_agent = request.headers.get('User-Agent', '')
+                log_query_to_firestore(
+                    drug_name=drug_name,
+                    category=category,
+                    result_data=res,
+                    client_ip=client_ip,
+                    user_agent=user_agent,
+                    source='patient_consultation',
+                    status='success' if res.get('success') else 'not_found'
+                )
+            except Exception:
+                pass
             return jsonify(res)
         if not drug_name:
             return jsonify({
@@ -2568,10 +2609,27 @@ def api_drug_insert():
         # 調用衛福部藥品仿單爬蟲與資料庫檢索核心邏輯
         res = fetch_tfda_drug_info(drug_name)
         if not res or not res.get('success'):
+            err_msg = res.get('error', f"查無與「{drug_name}」相符之藥品仿單資料，請確認藥品名稱或許可證字號。")
+            try:
+                from firestore_logger import log_query_to_firestore
+                client_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
+                user_agent = request.headers.get('User-Agent', '')
+                log_query_to_firestore(
+                    drug_name=drug_name,
+                    category="官方仿單全條文檢索",
+                    result_data={},
+                    client_ip=client_ip,
+                    user_agent=user_agent,
+                    source="pharmacist_insert_search",
+                    status="not_found",
+                    error_message=err_msg
+                )
+            except Exception:
+                pass
             return jsonify({
                 "success": False,
                 "drug_name": drug_name,
-                "error": res.get('error', f"查無與「{drug_name}」相符之藥品仿單資料，請確認藥品名稱或許可證字號。")
+                "error": err_msg
             }), 404
 
         lic_id = res.get('license_id', '')
@@ -2634,6 +2692,22 @@ def api_drug_insert():
         for sec_k, sec_v in structured_response["sections"].items():
             if sec_k not in structured_response:
                 structured_response[sec_k] = sec_v
+
+        try:
+            from firestore_logger import log_query_to_firestore
+            client_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
+            user_agent = request.headers.get('User-Agent', '')
+            log_query_to_firestore(
+                drug_name=drug_name,
+                category="官方仿單全條文檢索",
+                result_data=structured_response,
+                client_ip=client_ip,
+                user_agent=user_agent,
+                source="pharmacist_insert_search",
+                status="success"
+            )
+        except Exception:
+            pass
 
         return jsonify(structured_response)
 
@@ -2814,13 +2888,30 @@ def api_ask():
                 drug_info = clinical_document_ingestion_agent(lic_id, insert_pdf_path, drug_info)
 
         qa_res = smart_clinical_qa_dual(question, drug_info, q_id=q_id)
-        return jsonify({
+        ask_result = {
             "success": True,
             "patient_answer": qa_res.get("patient_answer", ""),
             "professional_answer": qa_res.get("professional_answer", ""),
             "disclaimer": qa_res.get("disclaimer", ""),
             "answer": qa_res.get("patient_answer", "")
-        })
+        }
+        try:
+            from firestore_logger import log_query_to_firestore
+            client_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
+            user_agent = request.headers.get('User-Agent', '')
+            log_query_to_firestore(
+                drug_name=drug_name or drug_info.get('cname') or question,
+                category=question,
+                result_data={**drug_info, **ask_result},
+                client_ip=client_ip,
+                user_agent=user_agent,
+                source="clinical_qa_ask",
+                status="success"
+            )
+        except Exception:
+            pass
+
+        return jsonify(ask_result)
     except Exception as e:
         return jsonify({
             "success": False,
