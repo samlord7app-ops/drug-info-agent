@@ -1503,6 +1503,104 @@ def smart_clinical_qa_dual(question: str, drug_info: dict, q_id: int = None) -> 
     return run_clinical_qa_dual(question, drug_info, q_id=q_id)
 
 
+def answer_patient_drug_question(drug_name: str, category_or_question) -> dict:
+    """
+    專屬處理：前端送出藥名及諮詢問題類別，依據詢問內容產出：
+    1. 仿單連結 (insert_url / package_insert_url)
+    2. 一般病患白話易懂版問題回覆 (patient_answer / answer)
+    """
+    drug_name = str(drug_name or '').strip()
+    if not drug_name:
+        return {
+            "insert_url": "",
+            "package_insert_url": "",
+            "patient_answer": "請提供欲查詢的藥品名稱（例如：易週糖、feuri、普拿疼等）。",
+            "answer": "請提供欲查詢的藥品名稱（例如：易週糖、feuri、普拿疼等）。"
+        }
+
+    # 1. 檢索衛福部食藥署官方藥證與仿單資料
+    drug_info = fetch_tfda_drug_info(drug_name)
+    if not drug_info or not drug_info.get('success'):
+        err_msg = drug_info.get('error') if drug_info else f"未在食藥署藥證庫中找到符合「{drug_name}」的藥品。"
+        return {
+            "insert_url": "",
+            "package_insert_url": "",
+            "patient_answer": f"抱歉，{err_msg}請確認藥品名稱或許可證字號是否正確。",
+            "answer": f"抱歉，{err_msg}請確認藥品名稱或許可證字號是否正確。"
+        }
+
+    lic_id = drug_info.get('license_id', '')
+    safe_lic = sanitize_filename(lic_id)
+    
+    # 確保仿單文字與附件解析已就緒
+    insert_pdf_path = os.path.join(CACHE_DIR, f"{safe_lic}_仿單核定本.pdf")
+    if os.path.exists(insert_pdf_path):
+        drug_info = clinical_document_ingestion_agent(lic_id, insert_pdf_path, drug_info)
+
+    # 2. 取得官方仿單連結
+    insert_url = (
+        drug_info.get('e_insert_url') or 
+        drug_info.get('official_detail_url') or 
+        drug_info.get('insert_pdf_url') or 
+        (f"https://mcp.fda.gov.tw/im_detail_1/{urllib.parse.quote(lic_id)}" if lic_id else "")
+    )
+
+    # 3. 智慧解析問題類別 / 問題文字
+    q_id = None
+    question = ""
+    cat_str = str(category_or_question).strip() if category_or_question is not None else ""
+
+    from clinical_qa_engine import AUTHORIZED_QUESTIONS, resolve_clinical_intent
+
+    # 若傳入的是數字 QID (例如 12, "12")
+    if cat_str.isdigit():
+        qid_int = int(cat_str)
+        if qid_int in AUTHORIZED_QUESTIONS:
+            q_id = qid_int
+            question = AUTHORIZED_QUESTIONS[qid_int]['title']
+
+    if not question and cat_str:
+        # 臨床關鍵字快速對齊
+        quick_map = {
+            "服用": 2, "吃法": 2, "用法": 2, "劑量": 2, "服法": 2, "適應症": 1, "作用": 1, "功效": 1,
+            "腎": 3, "洗腎": 3, "透析": 3, "孕": 4, "懷孕": 4, "哺乳": 4,
+            "小兒": 5, "兒童": 5, "小孩": 5, "嬰幼兒": 5, "老": 6, "長輩": 6, "高齡": 6,
+            "肝": 7, "點滴": 8, "注射": 8, "稀釋": 8, "配伍": 8, "相容": 8, "交互": 9, "併用": 9, "相剋": 9,
+            "副作用": 10, "不良反應": 10, "警語": 11, "注意": 11, "禁忌": 11,
+            "手術": 12, "拔牙": 12, "停藥": 12, "麻醉": 12, "忘記": 13, "漏吃": 13, "漏服": 13
+        }
+        for kw, target_qid in quick_map.items():
+            if kw in cat_str:
+                q_id = target_qid
+                question = AUTHORIZED_QUESTIONS[target_qid]['title']
+                break
+
+    if not question and cat_str:
+        matched_intent = resolve_clinical_intent(cat_str)
+        if matched_intent:
+            for qid, qcfg in AUTHORIZED_QUESTIONS.items():
+                if qcfg['intent'] == matched_intent:
+                    q_id = qid
+                    question = qcfg['title']
+                    break
+
+    if not question:
+        question = cat_str if cat_str else "藥品吃法或用法"
+        if not q_id:
+            q_id = 2
+
+    # 4. 產出一般病患白話易懂版問題回覆
+    qa_res = smart_clinical_qa_dual(question, drug_info, q_id=q_id)
+    patient_answer = qa_res.get("patient_answer", "")
+
+    return {
+        "insert_url": insert_url,
+        "package_insert_url": insert_url,
+        "patient_answer": patient_answer,
+        "answer": patient_answer
+    }
+
+
 def search_drug_db(query: str) -> list:
     """從 72,000 筆藥證資料庫中以多層權重索引檢索，支援品牌名、主成分、中文名與許可證字號"""
     q = query.strip()
@@ -2345,25 +2443,38 @@ def api_drug_insert():
     回傳衛福部官方核定仿單之完整結構化 JSON 資料。
     """
     drug_name = ""
+    category = ""
     try:
         if request.method == 'POST':
             req_json = request.get_json(silent=True) or {}
             if req_json:
                 drug_name = (req_json.get('drug_name') or req_json.get('q') or 
                              req_json.get('name') or req_json.get('query') or 
-                             req_json.get('keyword') or req_json.get('message') or 
-                             req_json.get('text') or req_json.get('prompt') or '')
+                             req_json.get('medication') or req_json.get('keyword') or '')
+                category = (req_json.get('category') or req_json.get('question_category') or 
+                            req_json.get('question') or req_json.get('q_id') or req_json.get('qid') or 
+                            req_json.get('type') or req_json.get('intent') or req_json.get('topic') or 
+                            req_json.get('message') or req_json.get('text') or req_json.get('prompt') or '')
             if not drug_name and request.form:
                 drug_name = (request.form.get('drug_name') or request.form.get('q') or 
-                             request.form.get('name') or request.form.get('query') or 
-                             request.form.get('keyword') or request.form.get('message') or '')
+                             request.form.get('name') or request.form.get('query') or '')
+                category = (request.form.get('category') or request.form.get('question_category') or 
+                            request.form.get('question') or request.form.get('q_id') or '')
         
         if not drug_name:
             drug_name = (request.args.get('drug_name') or request.args.get('q') or 
                          request.args.get('name') or request.args.get('query') or 
                          request.args.get('keyword') or '')
+        if not category:
+            category = (request.args.get('category') or request.args.get('question_category') or 
+                        request.args.get('question') or request.args.get('q_id') or 
+                        request.args.get('type') or '')
             
         drug_name = str(drug_name).strip()
+        # 若前端同時送出藥名與諮詢問題類別，直接回傳仿單連結及一般病患白話易懂版問題回覆
+        if drug_name and category:
+            res = answer_patient_drug_question(drug_name, category)
+            return jsonify(res)
         if not drug_name:
             return jsonify({
                 "success": False,
@@ -2528,8 +2639,10 @@ def api_download_box():
 
 
 @app.route('/api/ask', methods=['GET', 'POST'], strict_slashes=False)
+@app.route('/api/consult', methods=['GET', 'POST'], strict_slashes=False)
+@app.route('/api/qa', methods=['GET', 'POST'], strict_slashes=False)
 def api_ask():
-    """零 API 本地智慧臨床問答：四智能體協同 (意圖路由、章節鎖定、臨床抽取與推論生成)"""
+    """智慧臨床問答：支援傳入藥名與諮詢問題類別，回傳仿單連結及一般病患白話易懂版問題回覆"""
     try:
         data = {}
         if request.method == 'POST':
@@ -2538,6 +2651,23 @@ def api_ask():
                 data = request.form.to_dict()
         if not data:
             data = request.args.to_dict()
+
+        drug_name = (
+            data.get('drug_name') or data.get('drug') or data.get('name') or 
+            data.get('q') or data.get('medication') or ''
+        )
+        category = (
+            data.get('category') or data.get('question_category') or 
+            data.get('question') or data.get('q_id') or data.get('qid') or 
+            data.get('type') or data.get('intent') or data.get('topic') or 
+            data.get('prompt') or data.get('message') or ''
+        )
+
+        # 若前端提供藥名，或僅提供諮詢類別，直接產出專屬仿單連結與白話解答
+        if drug_name or (category and not data.get('drug_info') and not data.get('lic_id')):
+            res = answer_patient_drug_question(drug_name or category, category or "藥品吃法或用法")
+            return jsonify(res)
+
         question = (data.get('question') or data.get('q') or data.get('prompt') or data.get('message') or '').strip()
         q_id = data.get('q_id')
         drug_info = data.get('drug_info', {}) or data.get('drug_data', {})
