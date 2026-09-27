@@ -2204,8 +2204,9 @@ def api_drug_insert():
     drug_name = ""
     try:
         if request.method == 'POST':
-            if request.is_json and request.json:
-                drug_name = request.json.get('drug_name') or request.json.get('q') or request.json.get('name') or ''
+            req_json = request.get_json(silent=True) or {}
+            if req_json:
+                drug_name = req_json.get('drug_name') or req_json.get('q') or req_json.get('name') or ''
             if not drug_name and request.form:
                 drug_name = request.form.get('drug_name') or request.form.get('q') or request.form.get('name') or ''
         
