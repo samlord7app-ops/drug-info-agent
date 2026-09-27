@@ -2192,10 +2192,113 @@ def api_candidates():
         return jsonify({"success": False, "error": str(e), "candidates": []})
 
 
+@app.route('/api/drug_insert', methods=['GET', 'POST'])
+@app.route('/api/drug_info', methods=['GET', 'POST'])
+@app.route('/api/insert', methods=['GET', 'POST'])
+def api_drug_insert():
+    """
+    仿單查詢專屬 HTTP API 端點：
+    接受 drug_name 參數（支援 GET Query Parameter 或 POST JSON / Form-Data），
+    回傳衛福部官方核定仿單之完整結構化 JSON 資料。
+    """
+    drug_name = ""
+    try:
+        if request.method == 'POST':
+            if request.is_json and request.json:
+                drug_name = request.json.get('drug_name') or request.json.get('q') or request.json.get('name') or ''
+            if not drug_name and request.form:
+                drug_name = request.form.get('drug_name') or request.form.get('q') or request.form.get('name') or ''
+        
+        if not drug_name:
+            drug_name = request.args.get('drug_name') or request.args.get('q') or request.args.get('name') or ''
+            
+        drug_name = str(drug_name).strip()
+        if not drug_name:
+            return jsonify({
+                "success": False,
+                "error": "請提供必要參數 'drug_name'（藥品名稱或許可證字號）",
+                "usage_example": {
+                    "GET": "/api/drug_insert?drug_name=trulicity",
+                    "POST": {
+                        "url": "/api/drug_insert",
+                        "headers": {"Content-Type": "application/json"},
+                        "body": {"drug_name": "易週糖"}
+                    }
+                }
+            }), 400
+
+        # 調用衛福部藥品仿單爬蟲與資料庫檢索核心邏輯
+        res = fetch_tfda_drug_info(drug_name)
+        if not res or not res.get('success'):
+            return jsonify({
+                "success": False,
+                "drug_name": drug_name,
+                "error": res.get('error', f"查無與「{drug_name}」相符之藥品仿單資料，請確認藥品名稱或許可證字號。")
+            }), 404
+
+        lic_id = res.get('license_id', '')
+
+        # 封裝結構清晰、符合 RESTful 標準的仿單 JSON 回傳格式
+        structured_response = {
+            "success": True,
+            "query": drug_name,
+            "drug_name": drug_name,
+            "license_id": lic_id,
+            "cname": res.get('cname') or res.get('drug_name_zh', ''),
+            "ename": res.get('ename') or res.get('drug_name_en', ''),
+            "ingredient": res.get('ingredient', ''),
+            "dosage_form": res.get('dosage_form', ''),
+            "manufacturer": res.get('manufacturer', ''),
+            "revision_date": res.get('revision_date', ''),
+            "is_e_insert": bool(res.get('is_e_insert')),
+            "e_insert_url": res.get('e_insert_url', ''),
+            "official_detail_url": res.get('official_detail_url') or res.get('official_url', ''),
+            "has_insert_pdf": bool(res.get('has_insert_pdf')),
+            "download_insert_pdf_url": f"/api/download?lic={lic_id}" if lic_id else "",
+            "appearance_image_url": res.get('appearance_image_url') or res.get('appearance_url', ''),
+            "has_appearance_pdf": bool(res.get('has_appearance_pdf')),
+            "download_appearance_pdf_url": f"/api/download_appearance?lic={lic_id}" if lic_id else "",
+            # 結構化仿單八大核心章節
+            "sections": {
+                "indications": res.get('indications', ''),
+                "dosage": res.get('dosage', ''),
+                "contraindications": res.get('contraindications', ''),
+                "precautions": res.get('precautions', ''),
+                "special_warnings": res.get('special_warnings', ''),
+                "interactions": res.get('interactions', ''),
+                "adverse_effects": res.get('adverse_effects', ''),
+                "special_populations": res.get('special_populations', ''),
+                "overdose": res.get('overdose', ''),
+                "pharmacology": res.get('pharmacology', ''),
+                "storage": res.get('storage', ''),
+                "patient_info": res.get('patient_info', ''),
+                "characteristics": res.get('characteristics', '')
+            },
+            # 同名/多規格藥證清單
+            "disambiguation_list": res.get('disambiguation_list', []),
+            # 完整原始資訊（確保向下相容）
+            "raw_data": res
+        }
+
+        # 在根層級也保留各主要仿單章節，方便調用端直接取用
+        for sec_k, sec_v in structured_response["sections"].items():
+            if sec_k not in structured_response:
+                structured_response[sec_k] = sec_v
+
+        return jsonify(structured_response)
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "drug_name": drug_name,
+            "error": f"仿單查詢伺服器處理異常：{str(e)}"
+        }), 500
+
+
 @app.route('/api/search')
 def api_search():
     try:
-        q = request.args.get('q', '').strip()
+        q = (request.args.get('drug_name') or request.args.get('q') or '').strip()
         if not q:
             return jsonify({"success": False, "error": "請提供藥品名稱或許可證字號"})
 

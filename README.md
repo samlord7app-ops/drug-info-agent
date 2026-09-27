@@ -102,11 +102,87 @@ pip install -r requirements.txt
 
 | 端點 | 方法 | 說明 |
 | :--- | :---: | :--- |
+| **`/api/drug_insert`** | **GET / POST** | **仿單查詢核心 HTTP API**：接受 `drug_name` 參數，回傳完整官方仿單 JSON |
 | `/api/candidates?q={keyword}` | GET | 即時候選藥品清單與建議提示 |
-| `/api/search?q={keyword}` | GET | 完整檢索藥品資料、外觀圖片、仿單與電子仿單連結 |
+| `/api/search?drug_name={name}` | GET | 檢索藥品資料、外觀圖片、仿單與電子仿單連結 |
 | `/api/ask` | POST | 臨床雙軌智慧問答（輸入 `lic_id` 或 `drug_info` 與 `question` / `q_id`） |
-| `/api/download` | GET | 下載官方核定仿單 PDF |
-| `/api/download_appearance` | GET | 下載藥品本體外觀標籤 PDF |
+| `/api/download?lic={lic_id}` | GET | 下載官方核定仿單 PDF（若有電子仿單則自動跳轉） |
+| `/api/download_appearance?lic={lic_id}` | GET | 下載藥品本體外觀標籤 PDF |
+
+---
+
+### 💡 仿單查詢 API 使用說明 (`/api/drug_insert`)
+
+支援 `GET` 與 `POST` 兩種方式傳遞 `drug_name` 參數（亦支援別名 `/api/drug_info` 與 `/api/insert`）：
+
+#### 1. GET 請求範例
+```bash
+# 查詢易週糖仿單 JSON
+curl -X GET "http://127.0.0.1:5050/api/drug_insert?drug_name=trulicity"
+
+# 支援中英文商品名、學名或許可證字號
+curl -X GET "http://127.0.0.1:5050/api/drug_insert?drug_name=易週糖"
+```
+
+#### 2. POST 請求範例 (JSON Body)
+```bash
+curl -X POST "http://127.0.0.1:5050/api/drug_insert" \
+     -H "Content-Type: application/json" \
+     -d '{"drug_name": "keytruda"}'
+```
+
+#### 3. Python 呼叫範例
+```python
+import requests
+
+url = "http://127.0.0.1:5050/api/drug_insert"
+response = requests.get(url, params={"drug_name": "trulicity"})
+data = response.json()
+
+if data.get("success"):
+    print("品名:", data["cname"], "/", data["ename"])
+    print("許可證號:", data["license_id"])
+    print("電子仿單網址:", data["e_insert_url"])
+    print("用法用量:", data["sections"]["dosage"])
+    print("警語與注意事項:", data["sections"]["precautions"])
+else:
+    print("查詢失敗:", data.get("error"))
+```
+
+#### 4. JSON 回傳格式
+```json
+{
+  "success": true,
+  "query": "trulicity",
+  "drug_name": "trulicity",
+  "license_id": "衛部菌疫輸字第001200號",
+  "cname": "易週糖注射劑4.5公絲/0.5公撮",
+  "ename": "TRULICITY injection 4.5 mg/0.5 mL",
+  "ingredient": "DULAGLUTIDE",
+  "dosage_form": "注射劑",
+  "manufacturer": "ELI LILLY AND COMPANY",
+  "revision_date": "113/08/13",
+  "is_e_insert": true,
+  "e_insert_url": "https://mcp.fda.gov.tw/im_detail_1/...",
+  "official_detail_url": "https://info.fda.gov.tw/MLMS/...",
+  "has_insert_pdf": true,
+  "download_insert_pdf_url": "/api/download?lic=衛部菌疫輸字第001200號",
+  "appearance_image_url": "https://info.fda.gov.tw/...",
+  "has_appearance_pdf": true,
+  "download_appearance_pdf_url": "/api/download_appearance?lic=衛部菌疫輸字第001200號",
+  "sections": {
+    "indications": "適用於...",
+    "dosage": "易週糖的建議起始劑量為0.75 mg每週一次...",
+    "contraindications": "對本品過敏者禁用...",
+    "precautions": "5.1.9 以全身麻醉或深度鎮靜方式進行手術時之吸入(aspiration)風險...",
+    "interactions": "...",
+    "adverse_effects": "...",
+    "storage": "2°C 至 8°C 冷藏...",
+    "patient_info": "..."
+  },
+  "disambiguation_list": []
+}
+```
 
 ---
 
