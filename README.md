@@ -186,6 +186,48 @@ else:
 
 ---
 
+## ☁️ 雲端發佈指引 (Firebase App Hosting / Cloud Functions / Cloud Run)
+
+本專案已完整配置 **Firebase App Hosting**、**Firebase Functions (Python 2nd Gen)**、**Google Cloud Run** 以及標準容器化環境所需的全部設定檔（`apphosting.yaml`、`Dockerfile`、`Procfile`、`firebase.json`、`main.py`）：
+
+### 🚀 途徑一：Firebase App Hosting（推薦 · 最簡便全自動 CI/CD）
+Firebase App Hosting 為 Google 專為 Web 應用打造的最新代管服務，直接與 GitHub 整合，**每次 push 程式碼自動重新建置並發布**：
+
+1. 開啟 [Firebase Console](https://console.firebase.google.com/) 並選擇或建立您的 Firebase 專案。
+2. 在左側選單點選 **「App Hosting」**（應用程式代管），點擊 **「開始使用 (Get started)」**。
+3. 授權並選取您的 GitHub 專案庫：`samlord7app-ops/drug-info-agent`。
+4. 設定部署分支為 `main`，其餘選項保持預設（系統會自動讀取目錄下的 `apphosting.yaml` 與 `Dockerfile`）。
+5. 點擊 **「完成並部署」**，等待 2~3 分鐘即完成部署，Firebase 將自動為您配置專屬安全 HTTPS 網址（例如：`https://<your-project-id>.web.app`）！
+
+### ⚡ 途徑二：Firebase CLI / Cloud Functions (2nd Gen)
+若習慣使用本機命令列或欲以伺服器無關 (Serverless) 函式執行：
+```bash
+# 1. 全域安裝 Firebase CLI (需具備 Node.js)
+npm install -g firebase-tools
+
+# 2. 登入 Google 帳號
+firebase login
+
+# 3. 初始化並連結現有 Firebase 專案
+firebase use --add <your-firebase-project-id>
+
+# 4. 一鍵部署至 Cloud Functions 與 Hosting
+firebase deploy
+```
+
+### 🐳 途徑三：Google Cloud Run (Direct Container Deploy)
+亦可透過 Google Cloud CLI 直接一鍵部署至 Cloud Run：
+```bash
+gcloud run deploy drug-info-agent \
+  --source . \
+  --region asia-east1 \
+  --allow-unauthenticated \
+  --memory 1Gi \
+  --cpu 1
+```
+
+---
+
 ## 🔒 臨床與法律免責聲明 (Clinical Disclaimer)
 
 本系統所呈現之藥品資訊、電子仿單內容及問答建議，均直接萃取自衛生福利部食品藥物管理署 (TFDA) 最新核定之藥品仿單公開資料與臨床共識。

@@ -2457,9 +2457,10 @@ def api_ask():
 
 
 if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5050))
     print("=" * 60)
     print("衛福部藥品仿單極速智慧查詢系統 (TFDA Clinical Intelligence)")
     print("零 API 依賴 · 72,000 筆藥證資料庫已掛載 · 臨床仿單與外盒標籤雙軌下載")
-    print("請開啟瀏覽器造訪: http://127.0.0.1:5050")
+    print(f"請開啟瀏覽器造訪: http://127.0.0.1:{port}")
     print("=" * 60)
-    app.run(host='0.0.0.0', port=5050, debug=False)
+    app.run(host='0.0.0.0', port=port, debug=False)
