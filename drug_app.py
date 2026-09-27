@@ -1537,13 +1537,18 @@ def answer_patient_drug_question(drug_name: str, category_or_question) -> dict:
     if os.path.exists(insert_pdf_path):
         drug_info = clinical_document_ingestion_agent(lic_id, insert_pdf_path, drug_info)
 
-    # 2. 取得官方仿單連結
-    insert_url = (
+    # 2. 取得官方仿單電子版與 PDF 下載連結 (全面涵蓋各類前端所需之鍵名)
+    e_insert_url = (
         drug_info.get('e_insert_url') or 
-        drug_info.get('official_detail_url') or 
-        drug_info.get('insert_pdf_url') or 
         (f"https://mcp.fda.gov.tw/im_detail_1/{urllib.parse.quote(lic_id)}" if lic_id else "")
     )
+    export_pdf_url = f"https://mcp.fda.gov.tw/exportpdf/{urllib.parse.quote(lic_id)}" if lic_id else ""
+    local_download_url = f"https://drug-info-agent.onrender.com/api/download?lic={urllib.parse.quote(lic_id)}" if lic_id else ""
+    official_detail_url = drug_info.get('official_detail_url') or drug_info.get('official_url') or e_insert_url
+
+    # 選擇最具代表性的主仿單連結與 PDF 連結
+    primary_insert_link = e_insert_url or official_detail_url or export_pdf_url or local_download_url
+    primary_pdf_link = export_pdf_url or local_download_url or e_insert_url
 
     # 3. 智慧解析問題類別 / 問題文字
     q_id = None
@@ -1552,28 +1557,45 @@ def answer_patient_drug_question(drug_name: str, category_or_question) -> dict:
 
     from clinical_qa_engine import AUTHORIZED_QUESTIONS, resolve_clinical_intent
 
-    # 若傳入的是數字 QID (例如 12, "12")
-    if cat_str.isdigit():
-        qid_int = int(cat_str)
-        if qid_int in AUTHORIZED_QUESTIONS:
-            q_id = qid_int
-            question = AUTHORIZED_QUESTIONS[qid_int]['title']
+    # A. 優先提取開頭編號 (例如 "10 常見副作用(發生率>10%)有哪些?", "01 藥品作用", "12")
+    m = re.match(r'^\s*0?(\d{1,2})', cat_str)
+    if m:
+        qid_candidate = int(m.group(1))
+        if qid_candidate in AUTHORIZED_QUESTIONS:
+            q_id = qid_candidate
+            question = AUTHORIZED_QUESTIONS[qid_candidate]['title']
 
+    # B. 若無開頭編號，依臨床長詞優先順序嚴謹匹配（嚴防「副作用」被誤判為「作用」）
     if not question and cat_str:
-        # 臨床關鍵字快速對齊
-        quick_map = {
-            "服用": 2, "吃法": 2, "用法": 2, "劑量": 2, "服法": 2, "適應症": 1, "作用": 1, "功效": 1,
-            "腎": 3, "洗腎": 3, "透析": 3, "孕": 4, "懷孕": 4, "哺乳": 4,
-            "小兒": 5, "兒童": 5, "小孩": 5, "嬰幼兒": 5, "老": 6, "長輩": 6, "高齡": 6,
-            "肝": 7, "點滴": 8, "注射": 8, "稀釋": 8, "配伍": 8, "相容": 8, "交互": 9, "併用": 9, "相剋": 9,
-            "副作用": 10, "不良反應": 10, "警語": 11, "注意": 11, "禁忌": 11,
-            "手術": 12, "拔牙": 12, "停藥": 12, "麻醉": 12, "忘記": 13, "漏吃": 13, "漏服": 13
-        }
-        for kw, target_qid in quick_map.items():
-            if kw in cat_str:
-                q_id = target_qid
-                question = AUTHORIZED_QUESTIONS[target_qid]['title']
-                break
+        if any(kw in cat_str for kw in ["常見副作用", "副作用", "不良反應", "不適"]):
+            q_id = 10
+        elif any(kw in cat_str for kw in ["藥物交互", "食物交互", "交互作用", "併用", "相剋"]):
+            q_id = 9
+        elif any(kw in cat_str for kw in ["拔牙", "手術", "停藥", "麻醉", "鎮靜"]):
+            q_id = 12
+        elif any(kw in cat_str for kw in ["忘記", "漏吃", "漏服"]):
+            q_id = 13
+        elif any(kw in cat_str for kw in ["吃法", "用法", "服用", "劑量", "服法"]):
+            q_id = 2
+        elif any(kw in cat_str for kw in ["腎功能", "腎臟", "洗腎", "透析"]):
+            q_id = 3
+        elif any(kw in cat_str for kw in ["孕婦", "懷孕", "哺乳", "備孕"]):
+            q_id = 4
+        elif any(kw in cat_str for kw in ["小孩", "兒童", "小兒", "嬰幼兒", "幾歲"]):
+            q_id = 5
+        elif any(kw in cat_str for kw in ["老人", "長輩", "高齡", "年長者"]):
+            q_id = 6
+        elif any(kw in cat_str for kw in ["肝功能", "肝臟"]):
+            q_id = 7
+        elif any(kw in cat_str.lower() for kw in ["iv", "點滴", "注射", "稀釋", "配伍", "相容"]):
+            q_id = 8
+        elif any(kw in cat_str for kw in ["特殊警語", "警語", "注意事項", "禁忌"]):
+            q_id = 11
+        elif any(kw in cat_str for kw in ["藥品作用", "適應症", "作用", "功效", "主治", "治療什麼"]):
+            q_id = 1
+
+        if q_id and q_id in AUTHORIZED_QUESTIONS:
+            question = AUTHORIZED_QUESTIONS[q_id]['title']
 
     if not question and cat_str:
         matched_intent = resolve_clinical_intent(cat_str)
@@ -1585,19 +1607,42 @@ def answer_patient_drug_question(drug_name: str, category_or_question) -> dict:
                     break
 
     if not question:
-        question = cat_str if cat_str else "藥品吃法或用法"
+        question = cat_str if cat_str else "常見副作用(發生率>10%)有哪些?"
         if not q_id:
-            q_id = 2
+            q_id = 10
 
     # 4. 產出一般病患白話易懂版問題回覆
     qa_res = smart_clinical_qa_dual(question, drug_info, q_id=q_id)
     patient_answer = qa_res.get("patient_answer", "")
 
     return {
-        "insert_url": insert_url,
-        "package_insert_url": insert_url,
+        # 官方電子仿單連結
+        "insert_url": primary_insert_link,
+        "package_insert_url": primary_insert_link,
+        "e_insert_url": e_insert_url,
+        "official_url": official_detail_url,
+        "official_detail_url": official_detail_url,
+        "url": primary_insert_link,
+        "link": primary_insert_link,
+
+        # 官方仿單 PDF 專屬下載與檢視連結 (供前端 UI 的 PDF 按鈕使用)
+        "pdf_url": primary_pdf_link,
+        "pdf_link": primary_pdf_link,
+        "insert_pdf_url": primary_pdf_link,
+        "download_insert_pdf_url": primary_pdf_link,
+        "download_pdf_url": local_download_url,
+        "has_insert_pdf": True,
+        "has_pdf": True,
+
+        # 一般病患白話易懂版問題回覆
         "patient_answer": patient_answer,
-        "answer": patient_answer
+        "answer": patient_answer,
+
+        # 基本資訊
+        "drug_name": drug_info.get('cname') or drug_name,
+        "license_id": lic_id,
+        "question": question,
+        "success": True
     }
 
 
@@ -2147,7 +2192,19 @@ def fetch_tfda_drug_info(query_str: str) -> dict:
                                 pass
                         cached_data["is_e_insert"] = is_e
                         cached_data["e_insert_url"] = e_url
-                        cached_data["has_insert_pdf"] = os.path.exists(insert_pdf_path) and os.path.getsize(insert_pdf_path) > 1024
+                        export_pdf_url = f"https://mcp.fda.gov.tw/exportpdf/{urllib.parse.quote(lic_id)}" if lic_id else ""
+                        local_download_url = f"https://drug-info-agent.onrender.com/api/download?lic={urllib.parse.quote(lic_id)}" if lic_id else ""
+                        insert_link = e_url or cached_data.get('official_url') or export_pdf_url or local_download_url
+                        pdf_link = export_pdf_url or local_download_url or e_url
+                        cached_data["insert_url"] = insert_link
+                        cached_data["package_insert_url"] = insert_link
+                        cached_data["pdf_url"] = pdf_link
+                        cached_data["pdf_link"] = pdf_link
+                        cached_data["insert_pdf_url"] = pdf_link
+                        cached_data["download_insert_pdf_url"] = pdf_link
+                        cached_data["download_pdf_url"] = local_download_url
+                        cached_data["has_insert_pdf"] = True
+                        cached_data["has_pdf"] = True
                         has_app = (os.path.exists(appearance_pdf_path) and os.path.getsize(appearance_pdf_path) > 1024) or (os.path.exists(box_pdf_path) and os.path.getsize(box_pdf_path) > 1024)
                         cached_data["has_box_pdf"] = has_app
                         cached_data["has_appearance_pdf"] = has_app
@@ -2318,7 +2375,19 @@ def fetch_tfda_drug_info(query_str: str) -> dict:
             result = clinical_document_ingestion_agent(lic_id, insert_pdf_path, result)
 
         has_app_result = (os.path.exists(appearance_pdf_path) and os.path.getsize(appearance_pdf_path) > 1024) or (os.path.exists(box_pdf_path) and os.path.getsize(box_pdf_path) > 1024)
-        result["has_insert_pdf"] = os.path.exists(insert_pdf_path) and os.path.getsize(insert_pdf_path) > 1024
+        export_pdf_url = f"https://mcp.fda.gov.tw/exportpdf/{urllib.parse.quote(lic_id)}" if lic_id else ""
+        local_download_url = f"https://drug-info-agent.onrender.com/api/download?lic={urllib.parse.quote(lic_id)}" if lic_id else ""
+        insert_link = e_insert_url or url or export_pdf_url or local_download_url
+        pdf_link = export_pdf_url or local_download_url or e_insert_url
+        result["insert_url"] = insert_link
+        result["package_insert_url"] = insert_link
+        result["pdf_url"] = pdf_link
+        result["pdf_link"] = pdf_link
+        result["insert_pdf_url"] = pdf_link
+        result["download_insert_pdf_url"] = pdf_link
+        result["download_pdf_url"] = local_download_url
+        result["has_insert_pdf"] = True
+        result["has_pdf"] = True
         result["has_box_pdf"] = has_app_result
         result["has_appearance_pdf"] = has_app_result
 
@@ -2499,6 +2568,11 @@ def api_drug_insert():
             }), 404
 
         lic_id = res.get('license_id', '')
+        e_insert_link = res.get('e_insert_url') or (f"https://mcp.fda.gov.tw/im_detail_1/{urllib.parse.quote(lic_id)}" if lic_id else "")
+        export_pdf_link = f"https://mcp.fda.gov.tw/exportpdf/{urllib.parse.quote(lic_id)}" if lic_id else ""
+        local_download_link = f"https://drug-info-agent.onrender.com/api/download?lic={urllib.parse.quote(lic_id)}" if lic_id else ""
+        primary_pdf = export_pdf_link or local_download_link or e_insert_link
+        primary_insert = e_insert_link or res.get('official_detail_url') or export_pdf_link or local_download_link
 
         # 封裝結構清晰、符合 RESTful 標準的仿單 JSON 回傳格式
         structured_response = {
@@ -2513,13 +2587,20 @@ def api_drug_insert():
             "manufacturer": res.get('manufacturer', ''),
             "revision_date": res.get('revision_date', ''),
             "is_e_insert": bool(res.get('is_e_insert')),
-            "e_insert_url": res.get('e_insert_url', ''),
-            "official_detail_url": res.get('official_detail_url') or res.get('official_url', ''),
-            "has_insert_pdf": bool(res.get('has_insert_pdf')),
-            "download_insert_pdf_url": f"/api/download?lic={lic_id}" if lic_id else "",
+            "e_insert_url": e_insert_link,
+            "official_detail_url": res.get('official_detail_url') or res.get('official_url', '') or e_insert_link,
+            "insert_url": primary_insert,
+            "package_insert_url": primary_insert,
+            "pdf_url": primary_pdf,
+            "pdf_link": primary_pdf,
+            "insert_pdf_url": primary_pdf,
+            "download_insert_pdf_url": primary_pdf,
+            "download_pdf_url": local_download_link,
+            "has_insert_pdf": True,
+            "has_pdf": True,
             "appearance_image_url": res.get('appearance_image_url') or res.get('appearance_url', ''),
             "has_appearance_pdf": bool(res.get('has_appearance_pdf')),
-            "download_appearance_pdf_url": f"/api/download_appearance?lic={lic_id}" if lic_id else "",
+            "download_appearance_pdf_url": f"https://drug-info-agent.onrender.com/api/download_appearance?lic={lic_id}" if lic_id else "",
             # 結構化仿單八大核心章節
             "sections": {
                 "indications": res.get('indications', ''),
