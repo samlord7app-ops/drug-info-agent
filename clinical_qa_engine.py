@@ -119,6 +119,43 @@ IV_COMPATIBILITY_KNOWLEDGE = {
             '2. **外觀目視檢驗**：\n'
             '   * 本品不含防腐劑，調配後溶液若有任何混濁、結晶沉澱或變色，嚴禁注入人體。'
         )
+    },
+    'invanz': {
+        'name': '益滿治 / 厄他培南 (INVANZ / Ertapenem 注射劑)',
+        'type': 'iv',
+        'diluent': (
+            '1. **官方核定專用稀釋液（嚴格限制）**：\n'
+            '   * 僅限使用 **0.9% 氯化鈉注射液 (0.9% NaCl, 生理食鹽水)**、**注射用水** 或 **制菌注射用水**。\n'
+            '2. **13 歲以上成人及青少年靜脈準備步驟**：\n'
+            '   * **初配溶解**：每 1 公克 INVANZ 小瓶加入 **10 mL (公撮)** 的注射用水、0.9% 氯化鈉注射液或制菌注射用水。\n'
+            '   * **充分搖動**：充分搖動使藥品溶解，並立刻將溶解後之溶液移到 **50 mL (公撮) 的 0.9% 氯化鈉注射液** 中完成稀釋。\n'
+            '3. **3 個月大至 12 歲病童靜脈準備步驟**：\n'
+            '   * 依 15 mg/kg 劑量抽取適量初配溶解液（每日劑量上限不超過 1 公克），以 **0.9% 氯化鈉注射液** 稀釋成濃度為 **20 mg/mL 或更稀**。\n'
+            '4. **肌肉注射 (IM) 準備步驟**：\n'
+            '   * 含 1 公克 INVANZ 小瓶加入 **3.2 mL 的 1.0% 或 2.0% 之 lidocaine HCl 注射液（不含 epinephrine）**，充分搖勻溶解。\n'
+            '   * 立刻抽出溶液並以深部肌肉注射方式注入大肌肉部位（如臀部肌肉或大腿側邊肌肉），調配好的肌肉注射溶液必須在調配後的 **1 小時內** 使用完畢。（⚠️ 註：本調配好的肌肉注射液絕對不可供作靜脈投與！）。'
+        ),
+        'incompatibility': (
+            '1. 🚫 **葡萄糖絕對配伍禁忌（首要致命禁忌）**：\n'
+            '   * **官方仿單嚴格明定：不可以使用含有葡萄糖 (α-D-GLUCOSE) 的稀釋液！**（D5W、D10W 等含葡萄糖點滴液絕對禁用！葡萄糖會破壞藥物安定性使藥效降解失效）。\n'
+            '2. 🚫 **禁止與其他藥物混合輸注**：\n'
+            '   * **官方仿單明定：不可以將 INVANZ 與其他藥品混合或同時輸注！**\n'
+            '   * 必須使用專屬獨立輸注管路給藥，嚴禁共用同一點滴袋或同一 Y-Site 共同輸注。\n'
+            '3. **沖管規範**：\n'
+            '   * 若與其他藥品共用同一靜脈輸注導管，於給藥前後必須以相容之 **0.9% 氯化鈉注射液 (生理食鹽水)** 徹底沖洗管線。'
+        ),
+        'filter_tubing': (
+            '1. **靜脈輸注時間規範**：\n'
+            '   * 採取靜脈投與時，輸注 INVANZ 的時間**必須超過 30 分鐘**，不可快速靜脈推注。\n'
+            '2. **給藥前目視外觀檢查**：\n'
+            '   * INVANZ 溶液正常呈**無色至淡黃色**，在此範圍內的顏色差異不影響藥品效價；但若發現有可見顆粒沉澱或變色情形，切勿施打。'
+        ),
+        'stability': (
+            '1. **靜脈稀釋液使用時限（黃金 6 小時）**：\n'
+            '   * 經稀釋的靜脈注射藥品**必須在 6 小時內完成輸注**！逾時必須丟棄，切勿留置。\n'
+            '2. **肌肉注射液使用時限（1 小時）**：\n'
+            '   * 調配好的肌肉注射溶液必須在調配後的 **1 小時內** 使用完畢。'
+        )
     }
 }
 IV_COMPATIBILITY_KNOWLEDGE['keytruda'] = IV_COMPATIBILITY_KNOWLEDGE['pembrolizumab']
@@ -133,6 +170,10 @@ IV_COMPATIBILITY_KNOWLEDGE['帝拔癲'] = IV_COMPATIBILITY_KNOWLEDGE['depakine']
 IV_COMPATIBILITY_KNOWLEDGE['valproate'] = IV_COMPATIBILITY_KNOWLEDGE['depakine']
 IV_COMPATIBILITY_KNOWLEDGE['valproic'] = IV_COMPATIBILITY_KNOWLEDGE['depakine']
 IV_COMPATIBILITY_KNOWLEDGE['纈草酸'] = IV_COMPATIBILITY_KNOWLEDGE['depakine']
+IV_COMPATIBILITY_KNOWLEDGE['invanz'] = IV_COMPATIBILITY_KNOWLEDGE['invanz']
+IV_COMPATIBILITY_KNOWLEDGE['ertapenem'] = IV_COMPATIBILITY_KNOWLEDGE['invanz']
+IV_COMPATIBILITY_KNOWLEDGE['益滿治'] = IV_COMPATIBILITY_KNOWLEDGE['invanz']
+
 
 
 # =============================================================================
@@ -539,7 +580,8 @@ def detect_drug_administration_route(drug_info: dict) -> dict:
         'trastuzumab', 'herceptin', '賀疾妥', 'perjeta', 'bevacizumab', 'avastin', 
         'nivolumab', 'opdivo', '保疾伏', 'furosemide', 'rosis', '樂泄',
         'paclitaxel', 'formoxol', '伏摩素', '027928', '022395',
-        'trulicity', '易週糖', 'dulaglutide', '001200'
+        'trulicity', '易週糖', 'dulaglutide', '001200',
+        'invanz', 'ertapenem', '益滿治', '023749', '023901'
     ]
     if any(k in comb_str for k in known_injectables) and not any(k in dosage_form for k in ['錠', '口服', '膠囊']):
         is_injection = True
@@ -618,6 +660,12 @@ def generate_patient_answer(matched_intent: str, drug_info: dict, q_id=None, pro
     is_keytruda = route_info['is_keytruda'] or any(k in s for k in ['pembrolizumab', 'keytruda', '吉舒達'])
     is_trulicity = route_info.get('is_trulicity', False) or any(k in s for k in ['trulicity', '易週糖', 'dulaglutide', '001200'])
     is_glp1 = route_info.get('is_glp1', False) or is_trulicity or any(k in s for k in ['semaglutide', 'ozempic', 'rybelsus', 'wegovy', 'tirzepatide', 'mounjaro', 'liraglutide', 'victoza', 'saxenda', 'glp-1', 'glp1'])
+    is_invanz = any(k in s for k in ['invanz', 'ertapenem', '益滿治', '023749', '023901'])
+    matched_compat_key = None
+    for k in IV_COMPATIBILITY_KNOWLEDGE:
+        if k in s:
+            matched_compat_key = k
+            break
 
     # 1. 藥品作用
     if matched_intent == 'indications':
@@ -712,6 +760,19 @@ def generate_patient_answer(matched_intent: str, drug_info: dict, q_id=None, pro
             ans += f"3. **保存溫度規範**：平時請儲存於冰箱冷藏 (2°C 至 8°C)，切勿冷凍！若有攜帶外出需求，單次劑量注射筆可在室溫（不超過 30°C）下保存至多 14 天。\n\n"
             ans += f"### 🚨 【何時應聯絡醫療團隊】\n"
             ans += f"* 施打後若出現**持續且劇烈的上腹部疼痛（可能延伸至背部，伴隨噁心嘔吐）**，恐為急性胰臟炎徵兆，請立即停藥並緊急就醫！"
+            return ans
+        elif is_invanz:
+            ans = f"### 💡 【結論速覽（INVANZ 益滿治要怎麼施打？標準劑量與使用方式）】\n"
+            ans += f"🚫 **【本藥品為針劑（靜脈點滴輸注或肌肉注射劑），絕對非口服藥，切勿吞服！】**\n"
+            ans += f"* **給藥途徑**：限由專業醫護人員於醫療院所執行**靜脈點滴輸注 (IV infusion)** 或 **深部肌肉注射 (IM)**。\n"
+            ans += f"* **成人及 13 歲以上建議劑量**：常規為**每日一次 1 公克 (1g QD)**，靜脈輸注時間須**超過 30 分鐘**。\n"
+            ans += f"* **3 個月至 12 歲病童建議劑量**：每次 **15 mg/kg**（每日兩次，單日最高上限 1 公克）。\n"
+            ans += f"* ⚠️ **重大禁忌**：嚴格**不可以使用含有葡萄糖之稀釋液**，亦不可與其他藥物混合輸注。\n\n"
+            ans += f"### 📋 【接受抗生素針劑治療注意事項】\n"
+            ans += f"1. **按時完成完整療程**：抗生素針劑療程通常為 3 至 14 天，切勿因退燒或自覺好轉就擅自要求停打，以免引起抗藥性細菌復發。\n"
+            ans += f"2. **打點滴時有不適立即反應**：若輸注期間感到寒顫、發疹、心悸或頭暈，請立即按鈴呼叫護理師。\n\n"
+            ans += f"### 🚨 【何時應立即前往急診】\n"
+            ans += f"* 若出現全身大範圍皮疹水泡、呼吸喘鳴呼吸困難、嘴唇臉部水腫或嚴重持續血便水瀉（偽膜性大腸炎），請立即緊急處置！"
             return ans
         elif is_injection:
             ans = f"### 💡 【結論速覽（這個藥要怎麼施打/使用？）】\n"
@@ -854,6 +915,12 @@ def generate_patient_answer(matched_intent: str, drug_info: dict, q_id=None, pro
         elif any(k in s for k in ['depakine', '帝拔癲', 'valproate']):
             ans += f"👶 **【帝拔癲：兒童使用與極重度肝毒性黑框警訊】**：\n"
             ans += f"* 3 歲以下幼兒使用帝拔癲具有最高之致命性肝衰竭風險！必須由小兒神經科醫師單獨給藥，並密集監測肝功能。\n\n"
+        elif is_invanz:
+            ans += f"👶 **【INVANZ 益滿治：核准用於 3 個月大以上兒童與青少年】**：\n"
+            ans += f"* **核准年齡**：官方核准用於 **3 個月大至 17 歲** 之小兒與青少年病人。\n"
+            ans += f"* **3 個月至 12 歲兒童建議劑量**：每次 **15 mg/kg**（每日兩次，每日總劑量上限不超過 1 公克），靜脈輸注（超過 30 分鐘）或肌肉注射。\n"
+            ans += f"* **13 歲以上青少年**：比照成人劑量，**每日一次 1 公克 (1g QD)**。\n"
+            ans += f"* ⚠️ **年齡限制**：小於 3 個月大嬰兒之安全性與有效性尚未建立，不建議使用。\n\n"
         elif is_injection:
             ans += f"* **兒童針劑原則**：小孩各器官發育尚未完全，針劑劑量**必須由小兒專科醫師依孩子的「年齡與體重 (公斤)」精密計算**。\n"
             ans += f"* **官方核准限制**：若官方仿單未特別註明兒童使用方式，通常代表在 18 歲以下兒童或青少年的安全性尚未確立，不建議擅自給兒童施打。\n\n"
@@ -910,7 +977,29 @@ def generate_patient_answer(matched_intent: str, drug_info: dict, q_id=None, pro
 
     # 8. IV相容性與稀釋配伍禁忌為何？
     if matched_intent == 'iv_compatibility':
-        if is_keytruda:
+        if is_invanz or matched_compat_key == 'invanz':
+            ans = f"### 💡 【結論速覽（INVANZ 益滿治靜脈調配與配伍重大禁忌）】\n"
+            ans += f"🚫 **【首要重大禁忌：絕對不可以使用含有葡萄糖 (α-D-GLUCOSE) 的稀釋液！】**\n"
+            ans += f"* **官方仿單嚴格明定**：不可以使用含有葡萄糖 (α-D-GLUCOSE) 的稀釋液！（葡萄糖會破壞藥物化學安定性，導致藥效降解失效）。\n"
+            ans += f"* 🚫 **不可以將 INVANZ 與其他藥品混合或同時輸注**：官方仿單明定切勿與其他藥物混合或同時輸注，必須使用專屬獨立輸注管路給藥，嚴禁共用同一點滴袋或同一 Y-Site 共同輸注。\n\n"
+            ans += f"### 📋 【靜脈投與準備步驟與輸注規範（依據官方仿單 3.2 調製方式）】\n"
+            ans += f"💧 **1. 13 歲以上的病人 靜脈投與準備步驟**：\n"
+            ans += f"   * **初配溶解**：含 1 公克 INVANZ 的小瓶加入 **10 mL (公撮)** 的注射用水、0.9% 氯化鈉注射液 (生理食鹽水) 或制菌的注射用水。\n"
+            ans += f"   * **充分搖動稀釋**：充分搖動使藥品完全溶解，並**立刻將溶液移到 50 mL (公撮) 的 0.9% 氯化鈉注射液 (0.9% NaCl)** 中。\n"
+            ans += f"   * **輸注時間規範**：靜脈輸注時間**必須超過 30 分鐘**，切勿快速靜推。\n"
+            ans += f"   * **黃金 6 小時使用時限**：經稀釋的藥品**必須在 6 小時內完成輸注**！逾時必須丟棄，切勿留置。\n"
+            ans += f"👶 **2. 3 個月大至 12 歲病童 靜脈投與準備步驟**：\n"
+            ans += f"   * 依 **15 mg/kg** 體重劑量抽取適量初配溶解液（每日上限不超過 1 公克），以 **0.9% 氯化鈉注射液** 稀釋成濃度為 **20 mg/mL 或更稀**，亦必須在 6 小時內完成輸注。\n"
+            ans += f"💉 **3. 肌肉注射 (IM) 準備步驟（深部肌注專用）**：\n"
+            ans += f"   * 含 1 公克小瓶加入 **3.2 mL 的 1.0% 或 2.0% 之 lidocaine HCl 注射液（不含 epinephrine）** 充分搖動溶解成溶液。\n"
+            ans += f"   * 立刻抽出小瓶內溶液，以深部肌肉注射注入大肌肉部位（例如臀部肌肉或大腿側邊肌肉），調配好的肌肉注射溶液必須在調配後的 **1 小時內** 使用完畢。\n"
+            ans += f"   * ⚠️ **極重度警告**：以 lidocaine 調配之肌肉注射液**絕對不可供作靜脈投與使用**！\n\n"
+            ans += f"### 🚨 【病人在醫院打點滴注意事項】\n"
+            ans += f"1. **點滴外觀檢查**：INVANZ 溶液正常呈**無色至淡黃色**，在此範圍內的顏色差異不影響藥品效價；但若發現有可見顆粒沉澱或變色情形，切勿施打。\n"
+            ans += f"2. **切勿擅自調滴速**：每次靜脈點滴輸注時間必須超過 30 分鐘，嚴禁病患或家屬自行旋轉點滴滾輪加速。\n"
+            ans += f"3. **管路沖洗規範**：若與其他藥品共用同一個靜脈輸注導管，給藥前後必須以相容之 0.9% 氯化鈉注射液 (生理食鹽水) 徹底沖洗管線。"
+            return ans
+        elif is_keytruda:
             ans = f"### 💡 【結論速覽（吉舒達靜脈調配與點滴相容重點）】\n"
             ans += f"* **相容點滴液**：限用 **0.9% 氯化鈉注射液 (0.9% NaCl, 生理食鹽水)** 或 **5% 葡萄糖注射液 (5% Dextrose, D5W)**；稀釋後最終濃度為 1 至 10 mg/mL。\n"
             ans += f"* 🚫 **嚴格配伍禁忌**：官方仿單明定「**切勿透過同一輸注管線同時投予其他藥物**」！嚴禁與其他抗癌藥、抗生素混在同一個點滴袋中。\n"
@@ -920,6 +1009,17 @@ def generate_patient_answer(matched_intent: str, drug_info: dict, q_id=None, pro
             ans += f"1. **輸注管路觀察**：吉舒達稀釋後應為澄清至微乳白色溶液，若點滴袋內出現肉眼可見的大顆粒沉澱或變色，請立刻告知護理師。\n"
             ans += f"2. **禁止擅自調滴速**：每次點滴輸注時間為 30 分鐘，嚴禁病患或家屬自行旋轉點滴滾輪加速。\n"
             ans += f"3. **輸注反應立即按鈴**：若感到寒顫、發熱、呼吸喘或頭暈，請立刻按鈴呼叫護理人員。\n"
+            return ans
+        elif matched_compat_key and matched_compat_key in IV_COMPATIBILITY_KNOWLEDGE:
+            info = IV_COMPATIBILITY_KNOWLEDGE[matched_compat_key]
+            ans = f"### 💡 【結論速覽（{info['name']} 靜脈調配與相容重點）】\n"
+            ans += f"* **相容點滴稀釋液**：\n{info['diluent']}\n\n"
+            ans += f"* 🚫 **配伍禁忌與管路規範**：\n{info['incompatibility']}\n\n"
+            ans += f"* ⏱️ **輸注時間與安定時限**：\n{info['stability']}\n\n"
+            ans += f"### 📋 【病人在醫院打點滴該注意的事】\n"
+            ans += f"1. **注意點滴管路**：打點滴時，若看到管路內有白色混濁、沉澱或變色，請立刻按鈴告知護理師。\n"
+            ans += f"2. **切勿自己調滴速**：嚴禁自行旋轉點滴滾輪加速或減慢點滴速度。\n"
+            ans += f"3. **注意注射部位**：若注射部位出現紅腫熱痛、外滲漏針，請立即告知醫護人員。"
             return ans
         elif not is_injection:
             ans = f"### 💡 【結論速覽（這是口服藥，不能打點滴！）】\n"
@@ -931,7 +1031,7 @@ def generate_patient_answer(matched_intent: str, drug_info: dict, q_id=None, pro
             return ans
         else:
             ans = f"### 💡 【結論速覽（針劑注射點滴調配重點）】\n"
-            ans += f"* **醫院專業調配**：本藥品為醫院用針劑/點滴，必須由**專業藥師與護理師在無菌環境下以專用點滴液（如生理食鹽水或葡萄糖水）調製**，嚴格不可與其他不相容針劑混在同一條管路。\n\n"
+            ans += f"* **醫院專業調配**：本藥品為醫院用針劑/點滴，必須由**專業藥師與護理師在無菌環境下以官方仿單指定之專用相容點滴液（如 0.9% 生理食鹽水等）精準調製**，未確認相容性前嚴格不可與其他針劑混合或共用管路。\n\n"
             ans += f"### 📋 【病人在醫院打點滴該注意的事】\n"
             ans += f"1. **注意點滴管路**：打點滴時，若看到管路內有**白色混濁、沉澱或變色**，請立刻按鈴告知護理師。\n"
             ans += f"2. **注意注射部位**：若手臂打針處出現**紅腫、熱痛、滲液漏針**，請立即告知護理人員。\n"
@@ -1766,6 +1866,22 @@ def _smart_clinical_qa_core(question: str, drug_info: dict, q_id=None) -> str:
                 ans += f"> 生理食鹽水(normal saline，0.9g for 100ml)、葡萄糖點滴液(dextrose，5g for 100ml)、葡萄糖點滴液(dextrose，10g for 100ml)、葡萄糖點滴液(dextrose，20g for 100ml)、葡萄糖點滴液(dextrose，30g for 100ml)、葡萄糖生理食鹽水(dextrose，2.5g+NaCl，0.45g for 100ml)、重碳酸鈉(sodium bicarbonate，0.14g for 100ml)、trometamol (THAM)，3.66g+NaCl，0.172g for 100ml。\n"
                 ans += f"> 400mg的本品注射劑溶於500ml的上述點滴液中使用(trometamol例外：250ml)。\n"
                 ans += f"> 此靜脈點滴液適用於PVC、polythene或玻璃容器三種材質。\n\n"
+            elif any(k in matched_drug_key for k in ['invanz', 'ertapenem', '益滿治']):
+                ans += f"* **依據官方仿單【第 3 節 用法用量 / 3.2 調製方式】核定條文記載**：\n"
+                ans += f"> **13歲以上的病人 靜脈投與時的準備步驟:**\n"
+                ans += f"> 不可以將INVANZ與其他藥品混合或同時輸注。\n"
+                ans += f"> 不可以使用含有葡萄糖(α-D-GLUCOSE)的稀釋液。\n"
+                ans += f"> 在使用INVANZ之前，必須先調配和稀釋。\n"
+                ans += f"> 1. 含1公克INVANZ的小瓶加入10公撮的注射用水、0.9%氯化鈉注射液或制菌的注射用水。\n"
+                ans += f"> 2. 充分搖動使藥品溶解並立刻將溶液移到50公撮的0.9%氯化鈉注射液中。\n"
+                ans += f"> 3. 經稀釋的藥品必須在6小時內完成輸注。\n"
+                ans += f"> **肌肉注射的準備步驟:**\n"
+                ans += f"> 在使用INVANZ之前，必須先調配。\n"
+                ans += f"> 1. 含1公克INVANZ的小瓶加入3.2公撮的1.0%或2.0%之lidocaine HCl***注射液(不含epinephrine)。充分搖動讓藥品溶解成溶液。\n"
+                ans += f"> 2. 立刻抽出小瓶內的溶液，並以深部肌肉注射的方式將藥品注入到大肌肉部位(例如臀部肌肉或大腿側邊肌肉)。\n"
+                ans += f"> 3. 調配好的肌肉注射溶液必須在調配後的一小時內使用。(註：本調配好的溶液不可供作靜脈投與使用)。\n"
+                ans += f"> **3個月大至12歲病童 靜脈投與時的準備步驟:**\n"
+                ans += f"> 依15毫克/公斤體重的溶液(不超過1公克/天)，以0.9%氯化鈉注射液稀釋成濃度為20毫克/毫升或更稀，並於6小時內完成輸注。\n\n"
             else:
                 ans += f"* **依據官方仿單【第 3 節 用法用量 / 靜脈調配與投予指引】記載**。\n\n"
         else:
