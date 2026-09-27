@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>衛福部核定 13 類專業用藥臨床諮詢系統</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome 圖標 -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <!-- Marked.js 解析 Markdown -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;600;700&display=swap');
+    body {
+      font-family: 'Noto Sans TC', sans-serif;
+      background-color: #f8fafc;
+    }
+    .markdown-body h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #0f172a;
+      margin-top: 1rem;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .markdown-body p {
+      color: #334155;
+      line-height: 1.7;
+      margin-bottom: 0.6rem;
+    }
+    .markdown-body ul, .markdown-body ol {
+      margin-left: 1.25rem;
+      margin-bottom: 0.75rem;
+      color: #334155;
+      line-height: 1.6;
+    }
+    .markdown-body li {
+      margin-bottom: 0.35rem;
+    }
+    .markdown-body strong {
+      color: #0f172a;
+      font-weight: 600;
+    }
+    .markdown-body blockquote {
+      border-left: 4px solid #3b82f6;
+      padding-left: 0.85rem;
+      margin: 0.6rem 0;
+      color: #1e40af;
+      background-color: #eff6ff;
+      border-radius: 0 0.375rem 0.375rem 0;
+      padding-top: 0.35rem;
+      padding-bottom: 0.35rem;
+    }
+  </style>
+</head>
+<body class="min-h-screen text-slate-800 p-4 sm:p-6 lg:p-8">
+
+  <div class="max-w-4xl mx-auto space-y-6">
+
+    <!-- 頂部卡片：藥名輸入 -->
+    <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center text-lg shadow-md shadow-blue-500/20">
+          <i class="fa-solid fa-pills"></i>
+        </div>
+        <div>
+          <h1 class="text-xl font-bold text-slate-900">智慧用藥諮詢與官方仿單查詢系統</h1>
+          <p class="text-xs text-slate-500">串接衛福部食品藥物管理署 (TFDA) 72,000 筆核定藥證資料庫</p>
+        </div>
+      </div>
+
+      <div class="space-y-3">
+        <label for="drugInput" class="block text-sm font-semibold text-slate-700">請輸入藥品名稱或許可證字號：</label>
+        <div class="flex flex-col sm:flex-row gap-2.5">
+          <div class="relative flex-1">
+            <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-slate-400">
+              <i class="fa-solid fa-magnifying-glass"></i>
+            </span>
+            <input 
+              type="text" 
+              id="drugInput" 
+              value="bokey" 
+              placeholder="例如：bokey、易週糖、keytruda、普拿疼、trulicity" 
+              class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-slate-900 text-sm font-medium transition-all"
+            >
+          </div>
+          <button 
+            type="button" 
+            onclick="clearResults()" 
+            class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-xl transition-colors shrink-0 flex items-center justify-center gap-2"
+          >
+            <i class="fa-solid fa-rotate-left"></i> 重置
+          </button>
+        </div>
+
+        <!-- 快速試選常用藥品標籤 -->
+        <div class="flex flex-wrap items-center gap-2 pt-1 text-xs text-slate-500">
+          <span>常見搜尋：</span>
+          <button type="button" onclick="quickFill('bokey')" class="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors font-medium border border-slate-200">bokey (伯基)</button>
+          <button type="button" onclick="quickFill('trulicity')" class="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors font-medium border border-slate-200">trulicity (易週糖)</button>
+          <button type="button" onclick="quickFill('forxiga')" class="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors font-medium border border-slate-200">forxiga (福適佳)</button>
+          <button type="button" onclick="quickFill('keytruda')" class="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors font-medium border border-slate-200">keytruda (吉舒達)</button>
+          <button type="button" onclick="quickFill('panadol')" class="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors font-medium border border-slate-200">panadol (普拿疼)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 13 類專業臨床問題選單 -->
+    <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-4">
+      <div class="flex items-center gap-2.5">
+        <i class="fa-solid fa-clipboard-question text-blue-600 text-lg"></i>
+        <h2 class="text-base sm:text-lg font-bold text-slate-900">請選擇想詢問的問題 (13選1) :</h2>
+      </div>
+
+      <!-- 13 顆問題按鈕網格 -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5" id="questionsGrid">
+        <button type="button" onclick="onQuestionClick(1, '01 藥品作用', this)" class="q-btn p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-sm font-medium text-left transition-all flex items-center justify-between">
+          <span>01 藥品作用</span>
+        </button>
+        <button type="button" onclick="onQuestionClick(2, '02 藥品吃法或用法', this)" class="q-btn p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-sm font-medium text-left transition-all flex items-center justify-between">
+          <span>02 藥品吃法或用法</span>
+        </button>
+        <button type="button" onclick="onQuestionClick(3, '03 腎功能不好要調整劑量嗎', this)" class="q-btn p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-sm font-medium text-left transition-all flex items-center justify-between">
+          <span>03 腎功能不好要調整劑量嗎</span>
+        </button>
+        <button type="button" onclick="onQuestionClick(4, '04 孕婦可以用嗎', this)" class="q-btn p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-sm font-medium text-left transition-all flex items-center justify-between">
+          <span>04 孕婦可以用嗎</span>
+        </button>
+        <button type="button" onclick="onQuestionClick(5, '05 小孩最小幾歲可以用，要調整劑量嗎', this)" class="q-btn p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-sm font-medium text-left transition-all flex items-center justify-between">
+          <span>05 小孩最小幾歲可以用，要調整劑量嗎</span>
+        </button>
+        <button type="button" onclick="onQuestionClick(6, '06 老人可以用嗎，要調整劑量嗎', this)" class="q-btn p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-sm font-medium text-left transition-all flex items-center justify-between">
+          <span>06 老人可以用嗎，要調整劑量嗎</span>
+        </button>
+        <button type="button" onclick="onQuestionClick(7, '07 肝功能不好可以用嗎，要調整劑量嗎', this)" class="q-btn p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-sm font-medium text-left transition-all flex items-center justify-between">
+          <span>07 肝功能不好可以用嗎，要調整劑量嗎</span>
+        </button>
+        <button type="button" onclick="onQuestionClick(8, '08 IV相容性與稀釋配伍禁忌為何？', this)" class="q-btn p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-sm font-medium text-left transition-all flex items-center justify-between">
+          <span>08 IV相容性與稀釋配伍禁忌為何？</span>
+        </button>
+        <button type="button" onclick="onQuestionClick(9, '09 跟那些藥或食物有交互作用？', this)" class="q-btn p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-sm font-medium text-left transition-all flex items-center justify-between">
+          <span>09 跟那些藥或食物有交互作用？</span>
+        </button>
+        <button type="button" onclick="onQuestionClick(10, '10 常見副作用(發生率>10%)有哪些?', this)" class="q-btn p-3 rounded-xl border border-blue-500 bg-blue-600 text-white text-sm font-medium text-left shadow-sm transition-all flex items-center justify-between">
+          <span>10 常見副作用(發生率>10%)有哪些?</span>
+        </button>
+        <button type="button" onclick="onQuestionClick(11, '11 特殊警語或病人須注意事項', this)" class="q-btn p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-sm font-medium text-left transition-all flex items-center justify-between">
+          <span>11 特殊警語或病人須注意事項</span>
+        </button>
+        <button type="button" onclick="onQuestionClick(12, '12 拔牙或手術前需要停藥嗎？', this)" class="q-btn p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-sm font-medium text-left transition-all flex items-center justify-between">
+          <span>12 拔牙或手術前需要停藥嗎？</span>
+        </button>
+        <button type="button" onclick="onQuestionClick(13, '13 忘記服藥如何處理？', this)" class="q-btn p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-sm font-medium text-left transition-all flex items-center justify-between col-span-1 sm:col-span-2 lg:col-span-2">
+          <span>13 忘記服藥如何處理？</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 終端日誌卡片 (Terminal Monitor Card) -->
+    <div class="bg-slate-900 rounded-2xl p-5 text-slate-200 font-mono text-xs sm:text-sm shadow-md border border-slate-800 space-y-2" id="terminalLog">
+      <div class="flex items-center gap-2 text-slate-400 pb-1 border-b border-slate-800">
+        <span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span>
+        <span class="w-3 h-3 rounded-full bg-amber-500 inline-block"></span>
+        <span class="w-3 h-3 rounded-full bg-emerald-500 inline-block"></span>
+        <span class="ml-2 font-semibold text-slate-300">連線終端日誌 (Terminal Console)</span>
+      </div>
+      <div id="logLines" class="space-y-1.5 pt-1 text-slate-300">
+        <div>💡 [待命] 請確認上方藥品名稱，點選 13 類問題任一項即可立即諮詢...</div>
+      </div>
+    </div>
+
+    <!-- 結果報告與連結區塊 -->
+    <div id="resultCard" class="hidden bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-5">
+      
+      <!-- 工具列：語音播報與 PDF 連結按鈕 -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+        <!-- 語音播報 -->
+        <div class="flex items-center gap-2 text-sm text-slate-700">
+          <span class="font-bold flex items-center gap-1.5 text-slate-800">
+            <i class="fa-solid fa-volume-high text-blue-600"></i> 語音播報：
+          </span>
+          <button type="button" onclick="playVoice('zh-TW')" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors">
+            🗣 中文
+          </button>
+          <button type="button" onclick="playVoice('zh-TW-taiwanese')" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors">
+            🗣 台語
+          </button>
+          <button type="button" onclick="playVoice('en-US')" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors">
+            🗣 英文
+          </button>
+        </div>
+
+        <!-- 官方仿單與 PDF 下載按鈕 (綠色主按鈕) -->
+        <div class="flex items-center gap-2">
+          <a 
+            id="pdfButton" 
+            href="#" 
+            target="_blank" 
+            class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-semibold inline-flex items-center gap-2 shadow-sm transition-all"
+          >
+            <i class="fa-solid fa-file-pdf"></i>
+            <span id="pdfButtonText">前往衛福部「藥品仿單查詢平台」</span>
+          </a>
+          <a 
+            id="eInsertButton" 
+            href="#" 
+            target="_blank" 
+            class="hidden px-3.5 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 transition-all"
+          >
+            <i class="fa-solid fa-globe"></i>
+            <span>線上電子仿單</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- 提示框 (若已成功獲取 PDF 則動態更新為成功狀態) -->
+      <div id="hintBox" class="p-3.5 bg-blue-50 border border-blue-200 text-blue-800 rounded-xl text-xs sm:text-sm leading-relaxed flex items-start gap-2.5">
+        <i class="fa-solid fa-circle-info text-blue-600 mt-0.5 shrink-0"></i>
+        <div id="hintText">提示：若 AI 尚未能獲取 PDF 連結，請點擊上方按鈕前往「藥品仿單查詢平台」查閱官方仿單。</div>
+      </div>
+
+      <!-- 諮詢問題解答 Markdown 渲染呈現區 -->
+      <div id="answerContent" class="markdown-body p-2 text-slate-800 leading-relaxed text-sm sm:text-base">
+        <!-- Markdown HTML 動態注入處 -->
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // 後端 API 基礎位址 (預設使用 Render 雲端後端，也可切換為本機 http://localhost:5050)
+    const API_BASE = 'https://drug-info-agent.onrender.com';
+    let currentRawAnswer = '';
+    let currentDrugName = 'bokey';
+    let currentCategory = '10 常見副作用(發生率>10%)有哪些?';
+
+    function quickFill(name) {
+      document.getElementById('drugInput').value = name;
+      currentDrugName = name;
+      // 自動觸發已選取的題目重新查詢
+      const activeBtn = document.querySelector('.q-btn.bg-blue-600');
+      if (activeBtn) {
+        activeBtn.click();
+      }
+    }
+
+    function clearResults() {
+      document.getElementById('drugInput').value = '';
+      document.getElementById('resultCard').classList.add('hidden');
+      document.getElementById('logLines').innerHTML = `<div>💡 [待命] 請確認上方藥品名稱，點選 13 類問題任一項即可立即諮詢...</div>`;
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    }
+
+    // 點擊問題按鈕事件處理
+    async function onQuestionClick(qid, categoryText, btnEl) {
+      const drugInput = document.getElementById('drugInput');
+      const drugName = (drugInput.value || '').trim();
+
+      if (!drugName) {
+        alert('請先輸入藥品名稱或許可證字號！');
+        drugInput.focus();
+        return;
+      }
+
+      currentDrugName = drugName;
+      currentCategory = categoryText;
+
+      // 更新按鈕高亮樣式
+      document.querySelectorAll('.q-btn').forEach(btn => {
+        btn.className = 'q-btn p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-sm font-medium text-left transition-all flex items-center justify-between';
+      });
+      btnEl.className = 'q-btn p-3 rounded-xl border border-blue-500 bg-blue-600 text-white text-sm font-medium text-left shadow-sm transition-all flex items-center justify-between';
+
+      // 更新終端機日誌
+      const logLines = document.getElementById('logLines');
+      logLines.innerHTML = `
+        <div class="text-sky-400">🚀 [啟動] 準備發送請求至專屬 AI 代理人...</div>
+        <div class="text-teal-300">🌐 [連線] 目標網址：${API_BASE}/api/drug_insert</div>
+        <div class="text-amber-300">🔍 [資料] 藥品：「${drugName}」 | 類別：「${categoryText}」</div>
+        <div class="text-slate-400 animate-pulse">⏳ [分析] 雲端正在深度研讀衛福部核定仿單全條文，請稍候...</div>
+      `;
+
+      // 捲動至終端機
+      document.getElementById('terminalLog').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+      try {
+        const response = await fetch(`${API_BASE}/api/drug_insert`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            drug_name: drugName,
+            category: categoryText
+          })
+        });
+
+        const data = await response.json();
+
+        if (!data || (!data.success && !data.patient_answer && !data.answer)) {
+          logLines.innerHTML += `
+            <div class="text-red-400">❌ [錯誤] 查詢失敗：${data.error || '未找到相符之藥品仿單'}</div>
+          `;
+          return;
+        }
+
+        // 連線與解析成功
+        logLines.innerHTML = `
+          <div class="text-sky-400">🚀 [啟動] 準備發送請求至專屬 AI 代理人...</div>
+          <div class="text-teal-300">🌐 [連線] 目標網址：${API_BASE}/api/drug_insert</div>
+          <div class="text-amber-300">🔍 [資料] 藥品：「${drugName}」 | 類別：「${categoryText}」</div>
+          <div class="text-emerald-400">📄 [解析] 成功接收來自伺服器的 JSON 資料！</div>
+          <div class="text-emerald-300 font-semibold">✨ [完成] 分析完畢，請查閱下方報告與連結。</div>
+        `;
+
+        // 渲染結果
+        renderResultData(data, drugName, categoryText);
+
+      } catch (err) {
+        console.error(err);
+        logLines.innerHTML += `
+          <div class="text-red-400">❌ [連線異常] 無法連線至伺服器：${err.message}</div>
+          <div class="text-slate-400">建議確認網路連線是否暢通或稍後再試。</div>
+        `;
+      }
+    }
+
+    // 將後端回傳的資料呈現於 UI
+    function renderResultData(data, drugName, categoryText) {
+      const resultCard = document.getElementById('resultCard');
+      resultCard.classList.remove('hidden');
+
+      const resolvedDrugName = data.drug_name || drugName;
+      const rawAnswer = data.patient_answer || data.answer || '未能取得衛教回覆內容。';
+      currentRawAnswer = rawAnswer;
+
+      // 1. Markdown 渲染至解答內容區
+      const answerContent = document.getElementById('answerContent');
+      if (typeof marked !== 'undefined') {
+        answerContent.innerHTML = marked.parse(rawAnswer);
+      } else {
+        answerContent.innerText = rawAnswer;
+      }
+
+      // 2. 仿單 PDF 連結與電子仿單連結
+      const pdfButton = document.getElementById('pdfButton');
+      const pdfButtonText = document.getElementById('pdfButtonText');
+      const eInsertButton = document.getElementById('eInsertButton');
+      const hintBox = document.getElementById('hintBox');
+      const hintText = document.getElementById('hintText');
+
+      const pdfUrl = data.pdf_url || data.download_insert_pdf_url || data.insert_pdf_url;
+      const insertUrl = data.insert_url || data.e_insert_url;
+
+      if (pdfUrl) {
+        pdfButton.href = pdfUrl;
+        pdfButtonText.innerText = `📄 開啟/下載「${resolvedDrugName}」仿單 PDF`;
+        pdfButton.className = "px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-semibold inline-flex items-center gap-2 shadow-sm transition-all";
+
+        // 更新提示框為「已成功獲取」狀態，讓病患一目瞭然
+        hintBox.className = "p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs sm:text-sm leading-relaxed flex items-center justify-between";
+        hintText.innerHTML = `<span><i class="fa-solid fa-circle-check text-emerald-600 mr-1.5"></i>已成功取得食藥署核定之<strong>「${resolvedDrugName}」官方 PDF 仿單</strong>，點擊上方綠色按鈕即可直接開啟閱讀。</span>`;
+      } else if (insertUrl) {
+        pdfButton.href = insertUrl;
+        pdfButtonText.innerText = `🌐 開啟「${resolvedDrugName}」官方電子仿單`;
+        hintBox.className = "p-3 bg-blue-50 border border-blue-200 text-blue-800 rounded-xl text-xs sm:text-sm leading-relaxed flex items-center justify-between";
+        hintText.innerHTML = `<span><i class="fa-solid fa-circle-info text-blue-600 mr-1.5"></i>已為您連接至食藥署官方電子仿單頁面。</span>`;
+      } else {
+        pdfButton.href = `https://mcp.fda.gov.tw/`;
+        pdfButtonText.innerText = `🌐 前往衛福部「藥品仿單查詢平台」`;
+        hintBox.className = "p-3.5 bg-blue-50 border border-blue-200 text-blue-800 rounded-xl text-xs sm:text-sm leading-relaxed flex items-start gap-2.5";
+        hintText.innerHTML = `提示：若 AI 尚未能獲取 PDF 連結，請點擊上方按鈕前往「藥品仿單查詢平台」，輸入「${drugName}」即可輕鬆查閱官方仿單。`;
+      }
+
+      // 若同時有網頁版電子仿單，顯示次要按鈕
+      if (insertUrl && insertUrl !== pdfUrl) {
+        eInsertButton.href = insertUrl;
+        eInsertButton.classList.remove('hidden');
+      } else {
+        eInsertButton.classList.add('hidden');
+      }
+
+      // 平滑捲動至解答
+      resultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    // 語音播報
+    function playVoice(langCode) {
+      if (!currentRawAnswer) {
+        alert('目前尚無可播報的文字內容');
+        return;
+      }
+      if (!('speechSynthesis' in window)) {
+        alert('您的瀏覽器不支援語音合成功能');
+        return;
+      }
+
+      window.speechSynthesis.cancel();
+
+      // 去除 Markdown 標籤及 Emoji
+      const cleanText = currentRawAnswer
+        .replace(/###/g, '')
+        .replace(/[*_`>#-]/g, '')
+        .replace(/[\u{1F300}-\u{1F6FF}]/gu, '')
+        .replace(/\n+/g, '，')
+        .trim();
+
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utterance.rate = 0.95; // 稍慢語速，適合長者聆聽
+
+      if (langCode === 'en-US') {
+        utterance.lang = 'en-US';
+      } else if (langCode === 'zh-TW-taiwanese') {
+        // 嘗試台語相容性 Voice，若無則降級為繁體中文
+        const voices = window.speechSynthesis.getVoices();
+        const twVoice = voices.find(v => v.lang === 'zh-TW' || v.lang === 'nan-TW' || v.name.includes('Taiwan'));
+        if (twVoice) utterance.voice = twVoice;
+        utterance.lang = 'zh-TW';
+      } else {
+        utterance.lang = 'zh-TW';
+      }
+
+      window.speechSynthesis.speak(utterance);
+    }
+  </script>
+</body>
+</html>

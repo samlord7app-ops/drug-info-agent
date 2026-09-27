@@ -2421,6 +2421,13 @@ def index():
     return render_template('drug_search.html')
 
 
+@app.route('/patient', methods=['GET'], strict_slashes=False)
+@app.route('/ui', methods=['GET'], strict_slashes=False)
+def patient_ui():
+    return render_template('drug_patient_ui.html')
+
+
+
 @app.route('/health', methods=['GET', 'POST'], strict_slashes=False)
 @app.route('/api/health', methods=['GET', 'POST'], strict_slashes=False)
 @app.route('/api', methods=['GET', 'POST'], strict_slashes=False)
