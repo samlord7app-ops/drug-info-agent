@@ -1,0 +1,48 @@
+# =============================================================================
+# Git Ignore Configuration for drug-info-agent
+# =============================================================================
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Drug Cache & Downloads (Large crawled attachments, PDFs, SQLite DBs)
+drug_cache/
+scratch/
+*.db
+*.sqlite3
+*.log
+
+# Temporary test outputs & scratch scripts
+scratch_*.py
+test_*.txt
+*.tmp
+
+# Operating System & IDE Files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment Variables & Secrets
+.env
+.env.local
+
+# Legacy scheduler module files (retained locally, excluded from drug-info-agent)
+app.py
+scheduler.py
+test_scheduler.py
+pharmacist_schedule_template.xlsx
+templates/index.html
+static/
+
