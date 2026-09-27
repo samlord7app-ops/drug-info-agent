@@ -31,6 +31,30 @@ CACHE_DIR = os.path.join(BASE_DIR, "drug_cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 DB_PATH = os.path.join(CACHE_DIR, "tfda_drugs.db")
 
+def ensure_db():
+    """若本機或雲端環境尚未解壓縮 72,000 筆藥證資料庫，自動自 data/tfda_drugs.db.gz 解壓縮"""
+    try:
+        if not os.path.exists(DB_PATH) or os.path.getsize(DB_PATH) == 0:
+            gz_candidates = [
+                os.path.join(BASE_DIR, "data", "tfda_drugs.db.gz"),
+                os.path.join(BASE_DIR, "tfda_drugs.db.gz")
+            ]
+            for gz in gz_candidates:
+                if os.path.exists(gz):
+                    import gzip, shutil
+                    print(f"[DB] Extracting TFDA database {gz} to {DB_PATH} ...")
+                    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+                    tmp_db = DB_PATH + ".tmp"
+                    with gzip.open(gz, 'rb') as f_in, open(tmp_db, 'wb') as f_out:
+                        shutil.copyfileobj(f_in, f_out)
+                    os.replace(tmp_db, DB_PATH)
+                    print(f"[DB] TFDA database successfully initialized ({os.path.getsize(DB_PATH)} bytes)")
+                    break
+    except Exception as e:
+        print(f"[DB ERROR] ensure_db failed: {e}")
+
+ensure_db()
+
 # 註冊中文字型 (Windows 預設微軟正黑體)
 FONT_NAME = 'Helvetica'
 font_path = r'C:\Windows\Fonts\msjh.ttc'
@@ -202,7 +226,21 @@ FAST_INDEX = {
     # 猛健樂 / Mounjaro / Tirzepatide
     "mounjaro": {"cname": "猛健樂注射劑", "ename": "Mounjaro solution for injection", "lic": "衛部菌疫輸字第001248號"},
     "猛健樂": {"cname": "猛健樂注射劑", "ename": "Mounjaro solution for injection", "lic": "衛部菌疫輸字第001248號"},
-    "tirzepatide": {"cname": "猛健樂注射劑", "ename": "Mounjaro solution for injection", "lic": "衛部菌疫輸字第001248號"}
+    "tirzepatide": {"cname": "猛健樂注射劑", "ename": "Mounjaro solution for injection", "lic": "衛部菌疫輸字第001248號"},
+
+    # 飛悅 / 福避痛 / Feuri / Feburic / Febuxostat
+    "feuri": {"cname": "飛悅膜衣錠40毫克", "ename": "Feuri F.C. Tablets 40mg", "lic": "衛部藥製字第061186號"},
+    "feuri 40": {"cname": "飛悅膜衣錠40毫克", "ename": "Feuri F.C. Tablets 40mg", "lic": "衛部藥製字第061186號"},
+    "feuri 80": {"cname": "飛悅膜衣錠80毫克", "ename": "Feuri F.C. Tablets 80mg", "lic": "衛部藥製字第059271號"},
+    "飛悅": {"cname": "飛悅膜衣錠40毫克", "ename": "Feuri F.C. Tablets 40mg", "lic": "衛部藥製字第061186號"},
+    "飛悅40": {"cname": "飛悅膜衣錠40毫克", "ename": "Feuri F.C. Tablets 40mg", "lic": "衛部藥製字第061186號"},
+    "飛悅80": {"cname": "飛悅膜衣錠80毫克", "ename": "Feuri F.C. Tablets 80mg", "lic": "衛部藥製字第059271號"},
+    "feburic": {"cname": "福避痛膜衣錠 80 毫克", "ename": "Feburic 80 mg Film Coated Tablets", "lic": "衛署藥輸字第025427號"},
+    "福避痛": {"cname": "福避痛膜衣錠 80 毫克", "ename": "Feburic 80 mg Film Coated Tablets", "lic": "衛署藥輸字第025427號"},
+    "febuxostat": {"cname": "飛悅膜衣錠40毫克", "ename": "Feuri F.C. Tablets 40mg", "lic": "衛部藥製字第061186號"},
+    "061186": {"cname": "飛悅膜衣錠40毫克", "ename": "Feuri F.C. Tablets 40mg", "lic": "衛部藥製字第061186號"},
+    "059271": {"cname": "飛悅膜衣錠80毫克", "ename": "Feuri F.C. Tablets 80mg", "lic": "衛部藥製字第059271號"},
+    "025427": {"cname": "福避痛膜衣錠 80 毫克", "ename": "Feburic 80 mg Film Coated Tablets", "lic": "衛署藥輸字第025427號"}
 }
 
 
@@ -1428,6 +1466,8 @@ def search_drug_db(query: str) -> list:
     """從 72,000 筆藥證資料庫中以多層權重索引檢索，支援品牌名、主成分、中文名與許可證字號"""
     q = query.strip()
     ql = q.lower()
+    if not os.path.exists(DB_PATH) or os.path.getsize(DB_PATH) == 0:
+        ensure_db()
     if not os.path.exists(DB_PATH):
         return []
 

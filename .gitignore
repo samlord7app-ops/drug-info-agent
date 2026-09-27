@@ -20,6 +20,9 @@ scratch/
 *.sqlite3
 *.log
 
+# Pre-packaged compressed database (13.6 MB seed containing 72,000 TFDA licenses)
+!data/tfda_drugs.db.gz
+
 # Temporary test outputs & scratch scripts
 scratch_*.py
 test_*.txt
