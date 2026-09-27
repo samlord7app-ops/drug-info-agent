@@ -169,6 +169,10 @@
                 </div>
             </div>
             <div class="flex items-center space-x-3 text-xs">
+                <a href="/patient" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 border border-cyan-800/60 transition-colors">
+                    <i class="fa-solid fa-users"></i>
+                    <span>民眾白話諮詢版</span>
+                </a>
                 <span class="inline-flex items-center px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
                     <span class="w-2 h-2 rounded-full bg-emerald-400 mr-2 animate-pulse"></span>
                     全台 72,000 筆藥證資料庫在線
@@ -670,8 +674,21 @@
 
     </main>
 
-    <footer class="border-t border-slate-900 mt-16 py-8 text-center text-xs text-slate-500">
-        <p>本系統資料嚴格源自衛生福利部食品藥物管理署（TFDA）公開資料庫。用藥請遵從醫師或藥師專業指示，切勿自行更改處方。</p>
+    <!-- 頁面底部常態性醫療法規免責聲明 -->
+    <footer class="border-t border-slate-800/80 mt-16 py-8 px-4 sm:px-6 max-w-7xl mx-auto space-y-4">
+        <div class="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 text-slate-400 space-y-3 shadow-xl">
+            <div class="flex items-center gap-2.5 font-bold text-slate-200 text-sm">
+                <i class="fa-solid fa-scale-balanced text-amber-400 text-base"></i>
+                <span>臨床使用與法規免責聲明 (Legal & Clinical Disclaimer)</span>
+            </div>
+            <p class="text-xs leading-relaxed text-slate-400">
+                本系統提供之藥品仿單摘要、多章節結構化分析與 13 類標準臨床諮詢分析，資料均源自衛生福利部食品藥物管理署 (TFDA) 官方公開藥證資料庫，<strong>僅供醫療專業人員參考與臨床用藥輔助查詢，絕不能取代合格專科醫師、臨床藥師之親自診斷、處方或個別化醫療專業判斷</strong>。病人具體用藥事宜、劑量調整或停藥決策，請務必遵循主治醫師處方指示與專業藥師之用藥指導。本系統不對因使用或信賴本資訊所致之任何直接或間接損失承擔法規責任。
+            </p>
+            <div class="pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 gap-2">
+                <span>資料來源：衛生福利部食品藥物管理署 (TFDA) 72,000 筆官方核定仿單資料庫</span>
+                <span>© 衛福部藥品仿單智慧查詢系統 · 臨床專業輔助決策</span>
+            </div>
+        </div>
     </footer>
 
     <!-- JavaScript Logic -->
