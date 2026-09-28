@@ -2244,7 +2244,13 @@ def fetch_tfda_drug_info(query_str: str) -> dict:
                                 except Exception as e:
                                     print(f"Refresh full sections error: {e}")
 
-                            ensure_attachments(lic_id, cached_data)
+                            if not os.path.exists(insert_pdf_path):
+                                try:
+                                    THREAD_POOL.submit(background_cache_attachments, lic_id, h_raw if 'h_raw' in locals() else "", cached_data)
+                                except Exception:
+                                    pass
+                            else:
+                                ensure_attachments(lic_id, cached_data)
                             if os.path.exists(insert_pdf_path):
                                 cached_data = clinical_document_ingestion_agent(lic_id, insert_pdf_path, cached_data)
                             else:
@@ -2475,12 +2481,20 @@ def fetch_tfda_drug_info(query_str: str) -> dict:
 
 
 
-        # 確保官方核定仿單與外盒標籤齊備 (Agent 2)
-        ensure_attachments(lic_id, result, html_raw)
+        # 確保官方核定仿單與外盒標籤齊備 (Agent 2，若本機尚無檔案，非同步於背景下載與合成，避免阻塞造成前端逾時或記憶體溢出)
+        if os.path.exists(insert_pdf_path) and (os.path.exists(appearance_pdf_path) or os.path.exists(box_pdf_path)):
+            pass
+        else:
+            try:
+                THREAD_POOL.submit(background_cache_attachments, lic_id, html_raw, result)
+            except Exception:
+                pass
         
         # Agent 3: 深度研讀 PDF 仿單，提煉八大章節知識庫
         if os.path.exists(insert_pdf_path):
             result = clinical_document_ingestion_agent(lic_id, insert_pdf_path, result)
+        else:
+            result = clinical_document_ingestion_agent(lic_id, "", result)
 
         has_app_result = (os.path.exists(appearance_pdf_path) and os.path.getsize(appearance_pdf_path) > 1024) or (os.path.exists(box_pdf_path) and os.path.getsize(box_pdf_path) > 1024)
         export_pdf_url = f"https://mcp.fda.gov.tw/exportpdf/{urllib.parse.quote(lic_id)}" if lic_id else ""
