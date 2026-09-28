@@ -2233,6 +2233,7 @@ def fetch_tfda_drug_info(query_str: str) -> dict:
                                     pass
 
                             # 若快取缺乏全章節或性狀資料，重新獲取官方完整 16 大章節
+                            h_raw = ""
                             if not has_full_sections:
                                 try:
                                     url_refresh = f"https://mcp.fda.gov.tw/im_detail_1/{urllib.parse.quote(lic_id)}"
