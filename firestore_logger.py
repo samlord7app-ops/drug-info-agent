@@ -44,7 +44,7 @@ _firebase_initialized = False
 _firestore_db = None
 _init_attempted = False
 _init_lock = threading.Lock()
-_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="firestore_worker")
+_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="firestore_worker")
 
 # Firestore 集合名稱（預設為 drug_queries，可由環境變數覆寫）
 COLLECTION_NAME = os.getenv("FIRESTORE_COLLECTION", "drug_queries")

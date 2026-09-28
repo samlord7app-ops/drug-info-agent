@@ -1,4 +1,5 @@
 import os
+import gc
 import re
 import ssl
 import time
@@ -96,6 +97,16 @@ def ensure_db():
 
 ensure_db()
 
+def get_db_connection():
+    """建立低記憶體快取的 SQLite 連線（設定 PRAGMA cache_size = -2000，將快取上限鎖定於 2MB 防止 512MB RAM 溢出）"""
+    conn = sqlite3.connect(DB_PATH, timeout=10)
+    try:
+        conn.execute("PRAGMA cache_size = -2000;")
+        conn.execute("PRAGMA temp_store = MEMORY;")
+    except Exception:
+        pass
+    return conn
+
 # 註冊中文字型 (Windows 預設微軟正黑體)
 FONT_NAME = 'Helvetica'
 font_path = r'C:\Windows\Fonts\msjh.ttc'
@@ -151,7 +162,7 @@ HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 }
 
-THREAD_POOL = ThreadPoolExecutor(max_workers=4)
+THREAD_POOL = ThreadPoolExecutor(max_workers=2)
 
 # 臨床常見藥品校對索引庫（優先 0 毫秒極速命中）
 FAST_INDEX = {
@@ -835,6 +846,8 @@ def synthesize_e_insert_pdf(lic_id: str, drug_data: dict, out_pdf_path: str):
                 story.append(Spacer(1, 6))
 
         doc.build(story, canvasmaker=NumberedCanvas)
+        del story
+        gc.collect()
         return out_pdf_path
     except Exception as e:
         print(f"Error synthesizing PDF: {ascii(e)}")
@@ -912,6 +925,10 @@ def generate_appearance_pdf(out_pdf_path: str, lic_id: str, drug_data: dict, img
                 safe_lic = sanitize_filename(lic_id)
                 tmp_img_path = os.path.join(CACHE_DIR, f"tmp_shape_{safe_lic}.png")
                 im_pil.save(tmp_img_path, format="PNG")
+                try:
+                    im_pil.close()
+                except Exception:
+                    pass
 
                 rl_img = RLImage(tmp_img_path, width=target_w, height=target_h)
                 img_table = Table([[rl_img]], colWidths=[540])
@@ -932,6 +949,8 @@ def generate_appearance_pdf(out_pdf_path: str, lic_id: str, drug_data: dict, img
         story.append(Paragraph("※ 說明：本外觀圖檔取自衛福部食藥署 (TFDA) 最新核定藥品外觀資料庫，呈現錠劑裸錠、膠囊或針劑瓶身實體外觀，排除包裝外盒。", note_style))
 
         doc.build(story)
+        del story
+        gc.collect()
         return out_pdf_path
     except Exception as e:
         print(f"Error generating appearance PDF: {e}")
@@ -1323,12 +1342,19 @@ def clinical_document_ingestion_agent(lic_id: str, pdf_path: str, current_data: 
 
     # 1. 嘗試直接提取 PDF 數位文字層
     if os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 1024:
+        doc = None
         try:
             doc = pymupdf.open(pdf_path)
             raw = "\n".join(p.get_text() for p in doc)
             extracted_text = clean_pdf_duplicated_text(raw)
         except Exception as e:
             print(f"Agent 3 reading PDF error: {e}")
+        finally:
+            if doc is not None:
+                try:
+                    doc.close()
+                except Exception:
+                    pass
 
     # 2. 如果 PDF 屬於純圖片掃描檔 (提取文字長度 < 150)，自動啟動原生 OCR 深度研讀
     if len(extracted_text.strip()) < 150 and os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 1024:
@@ -1340,6 +1366,7 @@ def clinical_document_ingestion_agent(lic_id: str, pdf_path: str, current_data: 
             except Exception:
                 pass
         else:
+            doc = None
             try:
                 import winocr
                 from PIL import Image
@@ -1352,6 +1379,12 @@ def clinical_document_ingestion_agent(lic_id: str, pdf_path: str, current_data: 
                     p_txt = res.get('text', '') if isinstance(res, dict) else ''
                     if p_txt:
                         ocr_texts.append(p_txt)
+                    del pix
+                    if hasattr(img, 'close'):
+                        try:
+                            img.close()
+                        except Exception:
+                            pass
                 if ocr_texts:
                     extracted_text = "\n".join(ocr_texts)
                     try:
@@ -1361,6 +1394,13 @@ def clinical_document_ingestion_agent(lic_id: str, pdf_path: str, current_data: 
                         pass
             except Exception as e:
                 print(f"Agent 3 Native OCR error: {e}")
+            finally:
+                if doc is not None:
+                    try:
+                        doc.close()
+                    except Exception:
+                        pass
+                gc.collect()
 
     # 消除中文字元間的 OCR 額外空格雜訊
     if extracted_text:
@@ -1659,8 +1699,9 @@ def search_drug_db(query: str) -> list:
     if not os.path.exists(DB_PATH):
         return []
 
+    conn = None
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cur = conn.cursor()
         cur.execute('''
             SELECT 
@@ -1759,11 +1800,16 @@ def search_drug_db(query: str) -> list:
                 ''', (target_alias, f'%{target_alias}%', f'%{target_alias}%'))
                 rows = cur.fetchall()
 
-        conn.close()
         return rows
     except Exception as e:
         print(f"DB search error: {e}")
         return []
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def extract_date_score(name: str) -> int:
@@ -1973,13 +2019,18 @@ def ensure_attachments(lic_id: str, drug_data: dict = None, html_raw: str = None
         raw_rev = drug_data.get('raw_revision_date') or drug_data.get('revision_date') or ""
     if not raw_rev and os.path.exists(DB_PATH):
         try:
-            conn = sqlite3.connect(DB_PATH)
-            cur = conn.cursor()
-            cur.execute("SELECT revision_date FROM drugs WHERE lic_id = ? LIMIT 1", (lic_id,))
-            r_row = cur.fetchone()
-            if r_row and r_row[0]:
-                raw_rev = r_row[0]
-            conn.close()
+            conn = get_db_connection()
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT revision_date FROM drugs WHERE lic_id = ? LIMIT 1", (lic_id,))
+                r_row = cur.fetchone()
+                if r_row and r_row[0]:
+                    raw_rev = r_row[0]
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -2138,14 +2189,19 @@ def fetch_tfda_drug_info(query_str: str) -> dict:
                         db_raw_rev = ""
                         if os.path.exists(DB_PATH):
                             try:
-                                conn = sqlite3.connect(DB_PATH)
-                                cur = conn.cursor()
-                                cur.execute("SELECT revision_date FROM drugs WHERE lic_id = ? LIMIT 1", (lic_id,))
-                                r_row = cur.fetchone()
-                                if r_row and r_row[0]:
-                                    db_raw_rev = r_row[0]
-                                    db_rev_score = extract_date_score(r_row[0])
-                                conn.close()
+                                conn = get_db_connection()
+                                try:
+                                    cur = conn.cursor()
+                                    cur.execute("SELECT revision_date FROM drugs WHERE lic_id = ? LIMIT 1", (lic_id,))
+                                    r_row = cur.fetchone()
+                                    if r_row and r_row[0]:
+                                        db_raw_rev = r_row[0]
+                                        db_rev_score = extract_date_score(r_row[0])
+                                finally:
+                                    try:
+                                        conn.close()
+                                    except Exception:
+                                        pass
                             except Exception:
                                 pass
 
@@ -2265,18 +2321,23 @@ def fetch_tfda_drug_info(query_str: str) -> dict:
         # 自 DB 補齊官方核定適應症、劑型與廠商、異動日期
         if os.path.exists(DB_PATH) and lic_id:
             try:
-                conn = sqlite3.connect(DB_PATH)
-                cur = conn.cursor()
-                cur.execute("SELECT cname, ename, indications, form, manufacturer, revision_date FROM drugs WHERE lic_id = ? LIMIT 1", (lic_id,))
-                d_row = cur.fetchone()
-                if d_row:
-                    if not cname or cname == lic_id: cname = d_row[0]
-                    if not ename or ename == lic_id: ename = d_row[1]
-                    if not db_indications and d_row[2]: db_indications = d_row[2]
-                    if dosage_form.startswith("錠劑 / 膠囊劑") and d_row[3]: dosage_form = d_row[3]
-                    if manufacturer == "原廠藥商" and d_row[4]: manufacturer = d_row[4]
-                    if len(d_row) > 5 and d_row[5]: raw_revision_date = d_row[5]
-                conn.close()
+                conn = get_db_connection()
+                try:
+                    cur = conn.cursor()
+                    cur.execute("SELECT cname, ename, indications, form, manufacturer, revision_date FROM drugs WHERE lic_id = ? LIMIT 1", (lic_id,))
+                    d_row = cur.fetchone()
+                    if d_row:
+                        if not cname or cname == lic_id: cname = d_row[0]
+                        if not ename or ename == lic_id: ename = d_row[1]
+                        if not db_indications and d_row[2]: db_indications = d_row[2]
+                        if dosage_form.startswith("錠劑 / 膠囊劑") and d_row[3]: dosage_form = d_row[3]
+                        if manufacturer == "原廠藥商" and d_row[4]: manufacturer = d_row[4]
+                        if len(d_row) > 5 and d_row[5]: raw_revision_date = d_row[5]
+                finally:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
             except Exception:
                 pass
 
