@@ -203,9 +203,13 @@ FAST_INDEX = {
     "acetaminophen": {"cname": "普拿疼止痛加強錠", "ename": "Panadol Extra with Optizorb", "lic": "衛部藥輸字第026245號"},
 
     # 庫魯化 / Metformin
-    "glucophage": {"cname": "庫魯化錠 500 毫克", "ename": "GLUCOPHAGE TABLETS 500MG", "lic": "衛署藥輸字第018318號"},
-    "庫魯化": {"cname": "庫魯化錠 500 毫克", "ename": "GLUCOPHAGE TABLETS 500MG", "lic": "衛署藥輸字第018318號"},
-    "metformin": {"cname": "庫魯化錠 500 毫克", "ename": "GLUCOPHAGE TABLETS 500MG", "lic": "衛署藥輸字第018318號"},
+    "glucophage": {"cname": "庫魯化錠 1000 毫克", "ename": "GLUCOPHAGE TABLETS 1000MG", "lic": "衛署藥輸字第024189號"},
+    "庫魯化": {"cname": "庫魯化錠 1000 毫克", "ename": "GLUCOPHAGE TABLETS 1000MG", "lic": "衛署藥輸字第024189號"},
+    "metformin": {"cname": "庫魯化錠 1000 毫克", "ename": "GLUCOPHAGE TABLETS 1000MG", "lic": "衛署藥輸字第024189號"},
+    "metformine": {"cname": "庫魯化錠 1000 毫克", "ename": "GLUCOPHAGE TABLETS 1000MG", "lic": "衛署藥輸字第024189號"},
+    "美獲蒙": {"cname": "庫魯化錠 1000 毫克", "ename": "GLUCOPHAGE TABLETS 1000MG", "lic": "衛署藥輸字第024189號"},
+    "024189": {"cname": "庫魯化錠 1000 毫克", "ename": "GLUCOPHAGE TABLETS 1000MG", "lic": "衛署藥輸字第024189號"},
+
 
     # 佳糖維 / 恩排糖 / 福適佳
     "januvia": {"cname": "佳糖維 100 毫克 膜衣錠", "ename": "JANUVIA 100 mg F.C. Tablets", "lic": "衛署藥輸字第024668號"},
@@ -1722,6 +1726,39 @@ def search_drug_db(query: str) -> list:
                 cur.execute(sql, tuple(params))
                 rows = cur.fetchall()
 
+        # 若仍無結果，嘗試常見藥物別名或去贅餘字尾 (如 metformine -> metformin)
+        if not rows:
+            alias_map = {
+                'metformine': 'metformin',
+                'aspirine': 'aspirin',
+                'paracetamol': 'acetaminophen'
+            }
+            target_alias = alias_map.get(ql)
+            if not target_alias and ql.endswith('e') and len(ql) > 4:
+                target_alias = ql[:-1]
+
+            if target_alias:
+                cur.execute('''
+                    SELECT 
+                        d.lic_id, d.status, d.cname, d.ename, d.indications, d.form, d.manufacturer,
+                        d.revision_date,
+                        COALESCE(i.insert_url, '') AS insert_url,
+                        COALESCE(i.box_url, '') AS box_url
+                    FROM drugs d
+                    LEFT JOIN inserts i ON d.lic_id = i.lic_id
+                    WHERE 
+                        LOWER(d.ename) = ? 
+                        OR LOWER(d.ename) LIKE ?
+                        OR d.cname LIKE ?
+                    ORDER BY 
+                        CASE WHEN d.status != '已註銷' THEN 0 ELSE 1 END,
+                        CASE WHEN d.form LIKE '%（粉）%' OR d.lic_id LIKE '%陸輸%' THEN 1 ELSE 0 END,
+                        CASE WHEN i.insert_url IS NOT NULL AND i.insert_url != '' THEN 0 ELSE 1 END,
+                        d.lic_id DESC
+                    LIMIT 15
+                ''', (target_alias, f'%{target_alias}%', f'%{target_alias}%'))
+                rows = cur.fetchall()
+
         conn.close()
         return rows
     except Exception as e:
@@ -2031,6 +2068,16 @@ def fetch_tfda_drug_info(query_str: str) -> dict:
         disambiguation_list = []
 
         q_lower = clean_q.lower()
+        alias_map = {
+            'metformine': 'metformin',
+            'aspirine': 'aspirin',
+            'paracetamol': 'acetaminophen'
+        }
+        if q_lower in alias_map:
+            q_lower = alias_map[q_lower]
+        elif q_lower.endswith('e') and q_lower[:-1] in FAST_INDEX:
+            q_lower = q_lower[:-1]
+
         if q_lower in FAST_INDEX:
             preset = FAST_INDEX[q_lower]
             lic_id = preset["lic"]
