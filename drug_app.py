@@ -1698,20 +1698,471 @@ def answer_patient_drug_question(drug_name: str, category_or_question) -> dict:
     }
 
 
+# 1. 中文成分名 / 學名 / 俗名映射表 (Chinese Generic Ingredients -> English Standard INN & Brands)
+INGREDIENT_MAP = {
+    # 降血糖 / 體重管理 (Diabetes & Weight Management)
+    '替爾泊肽': ['tirzepatide', 'mounjaro'],
+    '替爾培肽': ['tirzepatide', 'mounjaro'],
+    '猛健樂成分': ['tirzepatide', 'mounjaro'],
+    '司美格魯肽': ['semaglutide', 'ozempic', 'wegovy', 'rybelsus'],
+    '索馬魯肽': ['semaglutide', 'ozempic', 'wegovy'],
+    '胰妥讚成分': ['semaglutide', 'ozempic'],
+    '利拉魯肽': ['liraglutide', 'victoza', 'saxenda'],
+    '善纖達成分': ['liraglutide', 'saxenda'],
+    '度拉糖肽': ['dulaglutide', 'trulicity'],
+    '度拉魯肽': ['dulaglutide', 'trulicity'],
+    '易週糖成分': ['dulaglutide', 'trulicity'],
+    '二甲雙胍': ['metformin', 'glucophage'],
+    '二甲二脈': ['metformin', 'glucophage'],
+    '鹽酸二甲雙胍': ['metformin', 'glucophage'],
+    '庫魯化成分': ['metformin', 'glucophage'],
+    '達格列淨': ['dapagliflozin', 'forxiga'],
+    '達格列發': ['dapagliflozin', 'forxiga'],
+    '福適佳成分': ['dapagliflozin', 'forxiga'],
+    '恩格列淨': ['empagliflozin', 'jardiance'],
+    '恩排糖成分': ['empagliflozin', 'jardiance'],
+    '卡格列淨': ['canagliflozin', 'invokana'],
+    '西格列汀': ['sitagliptin', 'januvia'],
+    '佳糖維成分': ['sitagliptin', 'januvia'],
+    '維格列汀': ['vildagliptin', 'galvus'],
+    '高糖優成分': ['vildagliptin', 'galvus'],
+    '利格列汀': ['linagliptin', 'trajenta'],
+    '糖漸平成分': ['linagliptin', 'trajenta'],
+    '格列美脲': ['glimepiride', 'amaryl'],
+    '格列齊特': ['gliclazide', 'diamicron'],
+    '吡格列酮': ['pioglitazone', 'actos'],
+    '阿卡波糖': ['acarbose', 'glucobay'],
+
+    # 心血管 / 降血壓 (Cardiovascular & Antihypertensive)
+    '氨氯地平': ['amlodipine', 'norvasc'],
+    '脈優成分': ['amlodipine', 'norvasc'],
+    '苯磺酸氨氯地平': ['amlodipine', 'norvasc'],
+    '硝苯地平': ['nifedipine', 'adalat'],
+    '地爾硫䓬': ['diltiazem', 'herbesser'],
+    '地爾硫卓': ['diltiazem', 'herbesser'],
+    '纈沙坦': ['valsartan', 'diovan'],
+    '氯沙坦': ['losartan', 'cozaar'],
+    '厄貝沙坦': ['irbesartan', 'aprovel'],
+    '替米沙坦': ['telmisartan', 'micardis'],
+    '奧美沙坦': ['olmesartan', 'olmetec'],
+    '坎地沙坦': ['candesartan', 'blopress'],
+    '培哚普利': ['perindopril', 'coversyl'],
+    '依那普利': ['enalapril', 'renitec'],
+    '雷米普利': ['ramipril', 'tritace'],
+    '比索洛爾': ['bisoprolol', 'concor'],
+    '康肯成分': ['bisoprolol', 'concor'],
+    '卡維地洛': ['carvedilol', 'dilatrend'],
+    '美托洛爾': ['metoprolol', 'betaloc'],
+    '普萘洛爾': ['propranolol', 'inderal'],
+    '螺內酯': ['spironolactone', 'aldactone'],
+    '呋塞米': ['furosemide', 'lasix', 'rosis'],
+    '呋喃苯胺酸': ['furosemide', 'lasix', 'rosis'],
+    '樂泄成分': ['furosemide', 'rosis'],
+    '硝酸甘油': ['nitroglycerin', 'nitrostat'],
+    '單硝酸異山梨酯': ['isosorbide mononitrate', 'isordil'],
+    '地高辛': ['digoxin', 'lanoxin'],
+    '胺碘酮': ['amiodarone', 'cordarone'],
+
+    # 降血脂 (Lipid Lowering / Statins)
+    '阿托伐他汀': ['atorvastatin', 'lipitor'],
+    '立普妥成分': ['atorvastatin', 'lipitor'],
+    '瑞舒伐他汀': ['rosuvastatin', 'crestor'],
+    '冠脂妥成分': ['rosuvastatin', 'crestor'],
+    '辛伐他汀': ['simvastatin', 'zocor'],
+    '普伐他汀': ['pravastatin', 'mevalotin'],
+    '匹伐他汀': ['pitavastatin', 'livalo'],
+    '依折麥布': ['ezetimibe', 'ezetrol'],
+    '非諾貝特': ['fenofibrate', 'lipanthyl'],
+
+    # 抗凝血 / 抗血小板 (Anticoagulants & Antiplatelets)
+    '阿斯匹靈': ['aspirin', 'bokey'],
+    '阿司匹林': ['aspirin', 'bokey'],
+    '乙醯水楊酸': ['aspirin', 'bokey'],
+    '伯基成分': ['aspirin', 'bokey'],
+    '氯吡格雷': ['clopidogrel', 'plavix'],
+    '保栓通成分': ['clopidogrel', 'plavix'],
+    '替格瑞洛': ['ticagrelor', 'brilinta'],
+    '華法林': ['warfarin', 'coumadin'],
+    '利伐沙班': ['rivaroxaban', 'xarelto'],
+    '阿哌沙班': ['apixaban', 'eliquis'],
+    '達比加群': ['dabigatran', 'pradaxa'],
+    '依度沙班': ['edoxaban', 'lixiana'],
+
+    # 腸胃道 (GI / PPI / Ulcer)
+    '埃索美拉唑': ['esomeprazole', 'nexium'],
+    '耐適恩成分': ['esomeprazole', 'nexium'],
+    '蘭索拉唑': ['lansoprazole', 'takepron'],
+    '泰克胃通成分': ['lansoprazole', 'takepron'],
+    '奧美拉唑': ['omeprazole', 'losec'],
+    '雷貝拉唑': ['rabeprazole', 'pariet'],
+    '泮托拉唑': ['pantoprazole', 'pantoloc'],
+    '法莫替丁': ['famotidine', 'gaster'],
+    '多潘立酮': ['domperidone', 'motilium'],
+
+    # 鎮痛 / 消炎 / 痛風 (Analgesics / NSAIDs / Gout)
+    '乙醯胺酚': ['acetaminophen', 'panadol', 'paracetamol'],
+    '撲熱息痛': ['acetaminophen', 'panadol'],
+    '普拿疼成分': ['acetaminophen', 'panadol'],
+    '布洛芬': ['ibuprofen', 'advil', 'motrin'],
+    '雙氯芬酸': ['diclofenac', 'voltaren', 'voren'],
+    '萘普生': ['naproxen', 'aleve'],
+    '塞來昔布': ['celecoxib', 'celebrex'],
+    '依托考昔': ['etoricoxib', 'arcoxia'],
+    '曲馬多': ['tramadol', 'ultram'],
+    '非布司他': ['febuxostat', 'feburic', 'feuri'],
+    '福避痛成分': ['febuxostat', 'feburic'],
+    '別嘌醇': ['allopurinol', 'zyloric'],
+    '秋水仙鹼': ['colchicine'],
+    '秋水仙素': ['colchicine'],
+    '苯溴馬隆': ['benzbromarone', 'uricon'],
+
+    # 精神神經 / 安眠 (CNS / Sleep / Psych)
+    '佐沛眠': ['zolpidem', 'stilnox'],
+    '使蒂諾斯成分': ['zolpidem', 'stilnox'],
+    '唑吡坦': ['zolpidem', 'stilnox'],
+    '艾司唑侖': ['estazolam', 'eurodin'],
+    '氯硝西泮': ['clonazepam', 'rivotril'],
+    '勞拉西泮': ['lorazepam', 'ativan'],
+    '阿普唑侖': ['alprazolam', 'xanax'],
+    '氟西汀': ['fluoxetine', 'prozac'],
+    '舍曲林': ['sertraline', 'zoloft'],
+    '帕羅西汀': ['paroxetine', 'seroxat'],
+    '艾司西酞普蘭': ['escitalopram', 'lexapro'],
+    '度洛西汀': ['duloxetine', 'cymbalta'],
+    '安非他酮': ['bupropion', 'wellbutrin'],
+    '喹硫平': ['quetiapine', 'seroquel'],
+    '丙戊酸': ['valproate', 'valproic acid', 'depakine'],
+    '丙戊酸鈉': ['valproate', 'depakine'],
+    '帝拔癲成分': ['valproate', 'depakine'],
+    '左乙拉西坦': ['levetiracetam', 'keppra'],
+    '加巴噴丁': ['gabapentin', 'neurontin'],
+    '普瑞巴林': ['pregabalin', 'lyrica'],
+
+    # 抗過敏 / 呼吸道 (Allergy & Respiratory)
+    '氯雷他定': ['loratadine', 'claritin'],
+    '西替利嗪': ['cetirizine', 'zyrtec'],
+    '左西替利嗪': ['levocetirizine', 'xyzal'],
+    '非索非那定': ['fexofenadine', 'allegra'],
+    '孟魯司特': ['montelukast', 'singulair'],
+    '欣流成分': ['montelukast', 'singulair'],
+    '沙丁胺醇': ['salbutamol', 'ventolin'],
+    '乙醯半胱氨酸': ['acetylcysteine', 'actein'],
+
+    # 生物製劑 / 腫瘤 / 抗感染 (Biologics & Oncology & Anti-infectives)
+    '帕博利珠單抗': ['pembrolizumab', 'keytruda'],
+    '派姆單抗': ['pembrolizumab', 'keytruda'],
+    '吉舒達成分': ['pembrolizumab', 'keytruda'],
+    '納武利尤單抗': ['nivolumab', 'opdivo'],
+    '奧希替尼': ['osimertinib', 'tagrisso'],
+    '泰格莎成分': ['osimertinib', 'tagrisso'],
+    '紫杉醇': ['paclitaxel', 'formoxol', 'taxol'],
+    '伏摩素成分': ['paclitaxel', 'formoxol'],
+    '美泊利單抗': ['mepolizumab', 'nucala'],
+    '紐佳樂成分': ['mepolizumab', 'nucala'],
+    '拉烏利珠單抗': ['ravulizumab', 'ultomiris'],
+    '瑞福優成分': ['ravulizumab', 'ultomiris'],
+    '厄他培南': ['ertapenem', 'invanz'],
+    '阿莫西林': ['amoxicillin'],
+    '左氧氟沙星': ['levofloxacin', 'cravit'],
+    '奧司他韋': ['oseltamivir', 'tamiflu'],
+    '克流感成分': ['oseltamivir', 'tamiflu'],
+    '恩替卡韋': ['entecavir', 'baraclude'],
+    '貝樂克成分': ['entecavir', 'baraclude']
+}
+
+# 2. 品牌與常用俗名對照 (Brand / Alias Synonyms)
+BRAND_SYNONYMS = {
+    '猛健': '猛健樂',
+    '庫魯': '庫魯化',
+    '立普': '立普妥',
+    '冠脂': '冠脂妥',
+    '福適': '福適佳',
+    '恩排': '恩排糖',
+    '佳糖': '佳糖維',
+    '易週': '易週糖',
+    '使蒂': '使蒂諾斯',
+    '伯基': '伯基',
+    '普拿': '普拿疼',
+    '泰格': '泰格莎',
+    '吉舒': '吉舒達',
+    '瑞福': '瑞福優',
+    '紐佳': '紐佳樂',
+    '胰妥': '胰妥讚',
+    '益滿': '益滿治',
+    '百憂': '百憂解',
+    '千憂': '千憂解',
+    '克流': '克流感',
+    '欣流': '欣流',
+    '貝樂': '貝樂克',
+    '脈優': '脈優',
+    '保栓': '保栓通',
+    '耐適': '耐適恩',
+    '泰克': '泰克胃通',
+    '帝拔': '帝拔癲',
+    '飛悅': '飛悅',
+    '福避': '福避痛',
+    '伏摩': '伏摩素'
+}
+
+# 3. 常見錯別字修正表 (Common Typos)
+TYPO_MAP = {
+    'metformine': 'metformin',
+    'aspirine': 'aspirin',
+    'asprin': 'aspirin',
+    'paracetamol': 'acetaminophen',
+    'tylenol': 'acetaminophen',
+    'panodol': 'panadol',
+    'ozampic': 'ozempic',
+    'monjaro': 'mounjaro',
+    'mounjara': 'mounjaro',
+    'tirzepitide': 'tirzepatide',
+    'truliciti': 'trulicity',
+    'keytruda inj': 'keytruda',
+    'tagriso': 'tagrisso'
+}
+
+
+def normalize_search_query(raw_query: str):
+    """
+    智慧清理與正規化查詢字串：
+    1. 去除引號、全形半形括號與雜訊標點
+    2. 提取劑量數值 (如 2.5, 500, 10mg 等)
+    3. 提取核心藥品字串 (去掉劑量與常見贅字)
+    4. 映射中文成分、學名與品牌別名
+    """
+    if not raw_query:
+        return "", "", "", []
+    
+    q = raw_query.strip()
+    # 去除前後引號與常見符號
+    q_clean = re.sub(r'["\'“”‘’【】\[\]（）()]', ' ', q).strip()
+    
+    # 提取劑量資訊 (如 2.5mg, 500毫克, 10mg)
+    dose_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:mg|毫克|g|公克|ml|毫升|公撮|mcg|微克)?', q_clean, re.IGNORECASE)
+    dose_val = dose_match.group(1) if dose_match else ""
+
+    # 去除常見贅字
+    q_pure = re.sub(r'(?:成分|主成分|藥品|仿單|口服|注射|錠劑|膠囊|專用)', '', q_clean).strip()
+    
+    # 提取 core_name (若有劑量，將劑量及其單位從 core_name 剝離)
+    core_name = q_pure
+    if dose_val:
+        core_name = re.sub(rf'(?:^|[^\w.]){re.escape(dose_val)}(?:\s*(?:mg|毫克|g|公克|ml|毫升|公撮|mcg|微克))?(?:$|[^\w.])', ' ', core_name, flags=re.IGNORECASE).strip()
+    if not core_name:
+        core_name = q_pure
+
+    ql = q_pure.lower()
+    cl = core_name.lower()
+
+    # 檢查錯別字
+    if ql in TYPO_MAP:
+        ql = TYPO_MAP[ql]
+        q_pure = ql
+    if cl in TYPO_MAP:
+        cl = TYPO_MAP[cl]
+        core_name = cl
+
+    mapped_terms = []
+    # 檢查成分字典 (優先檢查 core_name 與 q_pure)
+    for probe in [core_name, q_pure, cl, ql]:
+        if probe in INGREDIENT_MAP:
+            mapped_terms.extend(INGREDIENT_MAP[probe])
+    
+    # 部分包含匹配 (例如 '替爾泊肽 2.5')
+    if not mapped_terms:
+        for k, v_list in INGREDIENT_MAP.items():
+            clean_k = re.sub(r'(?:成分|主成分)', '', k)
+            if clean_k and (clean_k in core_name or clean_k in q_pure or (len(core_name) >= 3 and core_name in clean_k)):
+                for v in v_list:
+                    if v not in mapped_terms:
+                        mapped_terms.append(v)
+
+    # 檢查品牌俗名字典
+    for probe in [core_name, q_pure]:
+        if probe in BRAND_SYNONYMS:
+            mapped_terms.append(BRAND_SYNONYMS[probe])
+        for bk, bv in BRAND_SYNONYMS.items():
+            if probe.startswith(bk) and bv not in mapped_terms:
+                mapped_terms.append(bv)
+
+    # 去重
+    unique_terms = []
+    for t in mapped_terms:
+        if t and t not in unique_terms:
+            unique_terms.append(t)
+
+    return core_name, q_pure, dose_val, unique_terms
+
+
+def calculate_relevance_score(row, raw_query, core_name, pure_query, dose_val, mapped_terms):
+    """多維度智慧相關度評分器"""
+    lic_id, status, cname, ename, indications, form, manufacturer, rev_date, insert_url, box_url = row
+    cname_s = (cname or '').strip()
+    ename_s = (ename or '').strip()
+    cname_l = cname_s.lower()
+    ename_l = ename_s.lower()
+    lic_l = (lic_id or '').lower()
+    raw_l = raw_query.lower()
+    core_l = core_name.lower()
+    pure_l = pure_query.lower()
+
+    score = 0
+    matched_identity = False
+
+    # 1. 許可證字號吻合
+    if lic_l == raw_l or lic_l == pure_l or lic_l == core_l:
+        score += 2500
+        matched_identity = True
+    elif raw_l in lic_l or pure_l in lic_l:
+        score += 1500
+        matched_identity = True
+
+    # 2. 完全匹配
+    if cname_s == core_name or cname_s == pure_query or cname_s == raw_query:
+        score += 1600
+        matched_identity = True
+    elif ename_l == core_l or ename_l == pure_l or ename_l == raw_l:
+        score += 1500
+        matched_identity = True
+
+    # 3. 前綴吻合 (例如 "猛健樂注射劑..." 前綴為猛健樂)
+    clean_cname = re.sub(r'^["\'“”‘’\s]+', '', cname_s)
+    if clean_cname.startswith(core_name) or cname_s.startswith(core_name):
+        score += 800
+        matched_identity = True
+    if ename_l.startswith(core_l):
+        score += 750
+        matched_identity = True
+
+    # 4. 子字串吻合
+    if core_name and (core_name in cname_s or core_l in cname_l):
+        score += 500
+        matched_identity = True
+    if core_l and core_l in ename_l:
+        score += 500
+        matched_identity = True
+
+    # 5. 成分與別名對照匹配 (INGREDIENT_MAP / BRAND_SYNONYMS)
+    for term in mapped_terms:
+        tl = term.lower()
+        if tl in ename_l:
+            score += 900
+            matched_identity = True
+        elif tl in cname_l:
+            score += 900
+            matched_identity = True
+
+    # 若未匹配藥名身分，大幅降權
+    if not matched_identity:
+        score -= 1000
+
+    # 6. 劑量規格精準對齊 (Dose Matching)
+    if dose_val:
+        combined_text = f"{cname_s} {ename_s}".lower()
+        dose_pattern = rf'(?:^|[^\d.]){re.escape(dose_val)}(?:mg|毫克|g|公克|ml|毫升|公撮|mcg|微克|\b)'
+        if re.search(dose_pattern, combined_text):
+            score += 850
+        else:
+            score -= 300
+
+    # 7. 仿單核定本狀態加權
+    if insert_url and insert_url.strip():
+        score += 300
+    if box_url and box_url.strip():
+        score += 80
+
+    # 8. 藥證有效性
+    if status != '已註銷':
+        score += 400
+    else:
+        score -= 600
+
+    # 9. 降權原料藥或大陸輸入原料 (通常臨床/民眾非查詢原料藥)
+    is_raw_material = '（粉）' in (form or '') or '原料' in (form or '') or '陸輸' in lic_id
+    if is_raw_material:
+        if '粉' not in raw_query and '原料' not in raw_query:
+            score -= 3000
+    else:
+        # 一般臨床製劑 (錠劑、膠囊、注射劑、糖漿、懸液等)
+        score += 500
+
+    # 10. 核定日期加成 (最新核定本優先)
+    if rev_date:
+        try:
+            m = re.search(r'(\d+)', str(rev_date))
+            if m:
+                score += min(100, int(m.group(1)) % 100)
+        except Exception:
+            pass
+
+    return score
+
+
 def search_drug_db(query: str) -> list:
-    """從 72,000 筆藥證資料庫中以多層權重索引檢索，支援品牌名、主成分、中文名與許可證字號"""
+    """
+    從 72,000 筆藥證資料庫中以增強型 3D 智慧檢索模型查找藥品：
+    1. 支援中文商品名 (如：猛健樂、庫魯化、立普妥、福適佳、普拿疼等)
+    2. 支援中文成分名 / 學名 (如：替爾泊肽、二甲雙胍、司美格魯肽、乙醯胺酚、阿斯匹靈等)
+    3. 支援模糊查詢、錯別字自動校正與劑量規格匹配 (如：猛健樂 2.5, metformin 500mg)
+    4. 遵循 Render 512MB RAM 上限規範，使用低記憶體 SQLite 連線
+    """
     q = query.strip()
-    ql = q.lower()
+    if not q:
+        return []
     if not os.path.exists(DB_PATH) or os.path.getsize(DB_PATH) == 0:
         ensure_db()
     if not os.path.exists(DB_PATH):
         return []
 
+    core_name, pure_q, dose_val, mapped_terms = normalize_search_query(q)
+    ql = q.lower()
+    core_l = core_name.lower()
+    pure_ql = pure_q.lower()
+
     conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute('''
+
+        conditions = []
+        params = []
+
+        # 1. 許可證字號搜尋
+        conditions.append("d.lic_id LIKE ?")
+        params.append(f"%{q}%")
+
+        # 2. 藥品核心名搜尋
+        if core_name:
+            conditions.append("d.cname LIKE ?")
+            params.append(f"%{core_name}%")
+            conditions.append("LOWER(d.ename) LIKE ?")
+            params.append(f"%{core_l}%")
+
+        if pure_q != core_name:
+            conditions.append("d.cname LIKE ?")
+            params.append(f"%{pure_q}%")
+            conditions.append("LOWER(d.ename) LIKE ?")
+            params.append(f"%{pure_ql}%")
+
+        # 3. 映射成分 / 品牌俗名條件
+        for t in mapped_terms:
+            conditions.append("LOWER(d.ename) LIKE ?")
+            params.append(f"%{t.lower()}%")
+            conditions.append("d.cname LIKE ?")
+            params.append(f"%{t}%")
+
+        # 4. Token-based 拆解條件 (關鍵：只搜尋含有字母或中文字的 token，排除純數字防止 SQL 污染)
+        tokens = [tk.strip().lower() for tk in re.split(r'[\s\-_/]+', pure_q) if len(tk.strip()) >= 2]
+        for tk in tokens:
+            if re.search(r'[a-zA-Z\u4e00-\u9fa5]', tk) and tk != core_l:
+                conditions.append("d.cname LIKE ?")
+                params.append(f"%{tk}%")
+                conditions.append("LOWER(d.ename) LIKE ?")
+                params.append(f"%{tk}%")
+
+        where_clause = " OR ".join(conditions)
+
+        sql = f'''
             SELECT 
                 d.lic_id, d.status, d.cname, d.ename, d.indications, d.form, d.manufacturer,
                 d.revision_date,
@@ -1719,96 +2170,50 @@ def search_drug_db(query: str) -> list:
                 COALESCE(i.box_url, '') AS box_url
             FROM drugs d
             LEFT JOIN inserts i ON d.lic_id = i.lic_id
-            WHERE 
-                d.lic_id LIKE ? 
-                OR LOWER(d.ename) = ? 
-                OR d.cname = ?
-                OR d.cname LIKE ?
-                OR LOWER(d.ename) LIKE ?
-            ORDER BY 
-                CASE WHEN d.status != '已註銷' THEN 0 ELSE 1 END,
-                CASE WHEN d.form LIKE '%（粉）%' OR d.lic_id LIKE '%陸輸%' THEN 1 ELSE 0 END,
-                CASE WHEN i.insert_url IS NOT NULL AND i.insert_url != '' THEN 0 ELSE 1 END,
-                CASE WHEN d.lic_id = ? THEN 1
-                     WHEN LOWER(d.ename) = ? THEN 2
-                     WHEN d.cname = ? THEN 3
-                     WHEN d.cname LIKE ? THEN 4
-                     ELSE 5 END,
-                d.lic_id DESC
-            LIMIT 15
-        ''', (f'%{q}%', ql, q, f'%{q}%', f'%{ql}%', q, ql, q, f'{q}%'))
-        rows = cur.fetchall()
+            WHERE {where_clause}
+            LIMIT 100
+        '''
 
-        # 若單一比對無結果，嘗試多關鍵字拆解 (Token-based fallback)
-        if not rows and (' ' in q or '-' in q or '_' in q):
-            tokens = [t.strip().lower() for t in re.split(r'[\s\-_]+', q) if len(t.strip()) >= 2]
-            if tokens:
-                clauses = []
-                params = []
-                for t in tokens:
-                    if t in ['inj', 'injection']:
-                        clauses.append("(LOWER(d.ename) LIKE '%inj%' OR d.cname LIKE '%注射%' OR d.form LIKE '%注射%')")
-                    elif t in ['tab', 'tablet', 'tablets']:
-                        clauses.append("(LOWER(d.ename) LIKE '%tab%' OR d.cname LIKE '%錠%' OR d.form LIKE '%錠%')")
-                    elif t in ['cap', 'capsule', 'capsules']:
-                        clauses.append("(LOWER(d.ename) LIKE '%cap%' OR d.cname LIKE '%膠囊%' OR d.form LIKE '%膠囊%')")
-                    else:
-                        clauses.append("(LOWER(d.ename) LIKE ? OR d.cname LIKE ? OR d.lic_id LIKE ?)")
-                        params.extend([f"%{t}%", f"%{t}%", f"%{t}%"])
-                
-                where_clause = " AND ".join(clauses)
-                sql = f'''
-                    SELECT 
-                        d.lic_id, d.status, d.cname, d.ename, d.indications, d.form, d.manufacturer,
-                        d.revision_date,
-                        COALESCE(i.insert_url, '') AS insert_url,
-                        COALESCE(i.box_url, '') AS box_url
-                    FROM drugs d
-                    LEFT JOIN inserts i ON d.lic_id = i.lic_id
-                    WHERE {where_clause}
-                    ORDER BY 
-                        CASE WHEN d.status != '已註銷' THEN 0 ELSE 1 END,
-                        CASE WHEN i.insert_url IS NOT NULL AND i.insert_url != '' THEN 0 ELSE 1 END,
-                        d.lic_id DESC
-                    LIMIT 15
-                '''
-                cur.execute(sql, tuple(params))
-                rows = cur.fetchall()
+        cur.execute(sql, tuple(params))
+        candidate_rows = cur.fetchall()
 
-        # 若仍無結果，嘗試常見藥物別名或去贅餘字尾 (如 metformine -> metformin)
-        if not rows:
-            alias_map = {
-                'metformine': 'metformin',
-                'aspirine': 'aspirin',
-                'paracetamol': 'acetaminophen'
-            }
-            target_alias = alias_map.get(ql)
-            if not target_alias and ql.endswith('e') and len(ql) > 4:
-                target_alias = ql[:-1]
+        # 若寬鬆查詢仍未命中且包含英文字母，嘗試前綴截斷
+        if not candidate_rows and len(core_l) > 4:
+            fallback_stem = core_l[:4]
+            cur.execute('''
+                SELECT 
+                    d.lic_id, d.status, d.cname, d.ename, d.indications, d.form, d.manufacturer,
+                    d.revision_date,
+                    COALESCE(i.insert_url, '') AS insert_url,
+                    COALESCE(i.box_url, '') AS box_url
+                FROM drugs d
+                LEFT JOIN inserts i ON d.lic_id = i.lic_id
+                WHERE LOWER(d.ename) LIKE ? OR d.cname LIKE ?
+                LIMIT 50
+            ''', (f"%{fallback_stem}%", f"%{fallback_stem}%"))
+            candidate_rows = cur.fetchall()
 
-            if target_alias:
-                cur.execute('''
-                    SELECT 
-                        d.lic_id, d.status, d.cname, d.ename, d.indications, d.form, d.manufacturer,
-                        d.revision_date,
-                        COALESCE(i.insert_url, '') AS insert_url,
-                        COALESCE(i.box_url, '') AS box_url
-                    FROM drugs d
-                    LEFT JOIN inserts i ON d.lic_id = i.lic_id
-                    WHERE 
-                        LOWER(d.ename) = ? 
-                        OR LOWER(d.ename) LIKE ?
-                        OR d.cname LIKE ?
-                    ORDER BY 
-                        CASE WHEN d.status != '已註銷' THEN 0 ELSE 1 END,
-                        CASE WHEN d.form LIKE '%（粉）%' OR d.lic_id LIKE '%陸輸%' THEN 1 ELSE 0 END,
-                        CASE WHEN i.insert_url IS NOT NULL AND i.insert_url != '' THEN 0 ELSE 1 END,
-                        d.lic_id DESC
-                    LIMIT 15
-                ''', (target_alias, f'%{target_alias}%', f'%{target_alias}%'))
-                rows = cur.fetchall()
+        if not candidate_rows:
+            return []
 
-        return rows
+        # Python 多維度相關度評分 (Relevance Scoring & Reranking)
+        scored_candidates = []
+        seen_lics = set()
+
+        for row in candidate_rows:
+            lic = row[0]
+            if lic in seen_lics:
+                continue
+            seen_lics.add(lic)
+
+            score = calculate_relevance_score(row, q, core_name, pure_q, dose_val, mapped_terms)
+            scored_candidates.append((score, row))
+
+        # 依分數由高至低排序，取 Top 15
+        scored_candidates.sort(key=lambda x: x[0], reverse=True)
+        top_rows = [item[1] for item in scored_candidates[:15]]
+
+        return top_rows
     except Exception as e:
         print(f"DB search error: {e}")
         return []
