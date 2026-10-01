@@ -102,6 +102,12 @@
           </button>
         </div>
 
+        <!-- 精準匹配成功提示徽章 -->
+        <div id="exactMatchStatusBadge" class="hidden flex items-center gap-2 text-xs font-semibold px-3.5 py-2 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300">
+          <i class="fa-solid fa-circle-check text-emerald-600 text-sm shrink-0"></i>
+          <span id="exactMatchStatusText">已鎖定完全相符之藥品規格</span>
+        </div>
+
         <!-- 快速試選常用藥品標籤 -->
         <div class="flex flex-wrap items-center gap-2 pt-1 text-xs text-slate-500">
           <span>常見搜尋：</span>
@@ -112,6 +118,32 @@
           <button type="button" onclick="quickFill('bokey')" class="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors font-medium border border-slate-200">bokey (伯基)</button>
           <button type="button" onclick="quickFill('panadol')" class="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors font-medium border border-slate-200">panadol (普拿疼)</button>
         </div>
+      </div>
+    </div>
+
+    <!-- 藥品品項與劑量確認區 (若無比對到完全一樣品項含劑量時動態呈現 3 個選項) -->
+    <div id="candidateConfirmSection" class="hidden bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-2 border-amber-400 rounded-2xl p-5 sm:p-6 shadow-sm space-y-3.5 transition-all">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-amber-200">
+        <div class="flex items-center gap-2.5">
+          <span class="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-sm shadow">
+            <i class="fa-solid fa-layer-group"></i>
+          </span>
+          <div>
+            <h3 class="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+              <span>請確認您欲諮詢的藥品規格</span>
+              <span id="confirmQueryBadge" class="text-xs px-2.5 py-0.5 rounded-full bg-amber-200 text-amber-900 font-semibold">三選一確認</span>
+            </h3>
+            <p class="text-xs text-slate-600 mt-0.5">系統偵測到該藥品含有多種劑量規格，請點選您實際服用的品項：</p>
+          </div>
+        </div>
+        <div class="text-xs text-amber-800 font-semibold bg-white/90 px-3 py-1.5 rounded-lg border border-amber-300 flex items-center gap-1.5 shrink-0 shadow-xs">
+          <i class="fa-solid fa-arrow-pointer text-amber-600"></i> 點選任一卡片立即為您解答
+        </div>
+      </div>
+
+      <!-- 3 個候選卡片網格 -->
+      <div id="candidateCardsGrid" class="grid grid-cols-1 md:grid-cols-3 gap-3.5 pt-1">
+        <!-- 動態注入 3 個藥品選項 -->
       </div>
     </div>
 
@@ -253,17 +285,65 @@
   </div>
 
   <script>
-    // 後端 API 基礎位址 (預設使用 Render 雲端後端，也可切換為本機 http://localhost:5050)
-    const API_BASE = 'https://drug-info-agent.onrender.com';
+    // 後端 API 基礎位址 (同源時使用相對路徑，跨域時使用 Render 雲端後端)
+    const API_BASE = (window.location.protocol.startsWith('http')) ? '' : 'https://drug-info-agent.onrender.com';
     let currentRawAnswer = '';
-    let currentDrugName = 'bokey';
-    let currentCategory = '10 常見副作用(發生率>10%)有哪些?';
+    let currentDrugName = '猛健樂';
+    let currentCategory = '01 藥品作用';
+    let currentSelectedLic = '';
+    let currentSelectedCname = '';
+    let isExactConfirmed = false;
+
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function escapeAttr(str) {
+      return String(str || '')
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '&quot;');
+    }
+
+    // 監聽藥品輸入框變更，若使用者修改文字則重置精準鎖定狀態
+    document.addEventListener('DOMContentLoaded', () => {
+      const drugInput = document.getElementById('drugInput');
+      if (drugInput) {
+        drugInput.addEventListener('input', () => {
+          isExactConfirmed = false;
+          currentSelectedLic = '';
+          currentSelectedCname = '';
+          const statusBadge = document.getElementById('exactMatchStatusBadge');
+          if (statusBadge) statusBadge.classList.add('hidden');
+        });
+
+        drugInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            const activeBtn = document.querySelector('.q-btn.bg-blue-600') || document.querySelector('.q-btn');
+            if (activeBtn) activeBtn.click();
+          }
+        });
+      }
+    });
 
     function quickFill(name) {
-      document.getElementById('drugInput').value = name;
+      const drugInput = document.getElementById('drugInput');
+      drugInput.value = name;
       currentDrugName = name;
+      isExactConfirmed = false;
+      currentSelectedLic = '';
+      currentSelectedCname = '';
+      const statusBadge = document.getElementById('exactMatchStatusBadge');
+      if (statusBadge) statusBadge.classList.add('hidden');
+
       // 自動觸發已選取的題目重新查詢
-      const activeBtn = document.querySelector('.q-btn.bg-blue-600');
+      const activeBtn = document.querySelector('.q-btn.bg-blue-600') || document.querySelector('.q-btn');
       if (activeBtn) {
         activeBtn.click();
       }
@@ -272,8 +352,149 @@
     function clearResults() {
       document.getElementById('drugInput').value = '';
       document.getElementById('resultCard').classList.add('hidden');
+      document.getElementById('candidateConfirmSection').classList.add('hidden');
+      const statusBadge = document.getElementById('exactMatchStatusBadge');
+      if (statusBadge) statusBadge.classList.add('hidden');
       document.getElementById('logLines').innerHTML = `<div>💡 [待命] 請確認上方藥品名稱，點選 13 類問題任一項即可立即諮詢...</div>`;
+      isExactConfirmed = false;
+      currentSelectedLic = '';
+      currentSelectedCname = '';
       if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    }
+
+    // 檢查藥品是否達到「完全一樣品項(含劑量)」，若未達到則顯示 3 個選項供確認
+    async function checkAndRenderCandidates(drugName, callback) {
+      const confirmSection = document.getElementById('candidateConfirmSection');
+      const cardsGrid = document.getElementById('candidateCardsGrid');
+      const statusBadge = document.getElementById('exactMatchStatusBadge');
+      const statusText = document.getElementById('exactMatchStatusText');
+
+      if (!drugName) {
+        confirmSection.classList.add('hidden');
+        if (statusBadge) statusBadge.classList.add('hidden');
+        if (callback) callback(false);
+        return;
+      }
+
+      try {
+        const resp = await fetch(`${API_BASE}/api/candidates?q=${encodeURIComponent(drugName)}`);
+        const data = await resp.json();
+
+        if (!data.success || !data.candidates || data.candidates.length === 0) {
+          confirmSection.classList.add('hidden');
+          if (statusBadge) statusBadge.classList.add('hidden');
+          if (callback) callback(false);
+          return;
+        }
+
+        // 若使用者輸入的是完整許可證或已包含精準劑量 (is_exact_match === true)
+        if (data.is_exact_match) {
+          confirmSection.classList.add('hidden');
+          isExactConfirmed = true;
+          const topCand = data.candidates[0];
+          currentSelectedLic = topCand.lic_id;
+          currentSelectedCname = topCand.cname;
+          
+          if (statusBadge && statusText) {
+            statusText.innerHTML = `已精準鎖定規格：<strong>${escapeHtml(currentSelectedCname)}</strong> (${currentSelectedLic})`;
+            statusBadge.classList.remove('hidden');
+          }
+          if (callback) callback(true, currentSelectedLic, currentSelectedCname);
+          return;
+        }
+
+        // 若非完全一樣品項 (含劑量)，顯示三個可能的藥品選擇供使用者確認
+        isExactConfirmed = false;
+        currentSelectedLic = '';
+        currentSelectedCname = '';
+        if (statusBadge) statusBadge.classList.add('hidden');
+
+        const top3 = (data.suggested_top_3 && data.suggested_top_3.length > 0) ? data.suggested_top_3 : data.candidates.slice(0, 3);
+        document.getElementById('confirmQueryBadge').innerText = `搜尋「${drugName}」`;
+
+        cardsGrid.innerHTML = top3.map((c, idx) => {
+          const doseMatch = ((c.cname || '') + ' ' + (c.ename || '')).match(/(\d+(?:\.\d+)?\s*(?:mg|毫克|g|公克|ml|毫升|公撮|mcg|微克))/i);
+          const doseBadge = doseMatch ? doseMatch[1] : (c.form || '官方製劑');
+
+          return `
+            <div onclick="selectCandidate('${c.lic_id}', '${escapeAttr(c.cname)}', '${escapeAttr(c.ename)}')" 
+                 id="cand_card_${c.lic_id}"
+                 class="candidate-card bg-white p-4 rounded-xl border-2 border-amber-300 hover:border-blue-600 hover:bg-blue-50/50 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group">
+              <div>
+                <div class="flex items-center justify-between gap-1 mb-2">
+                  <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                    <i class="fa-solid fa-pills mr-1 text-[11px]"></i>${doseBadge}
+                  </span>
+                  <span class="text-[11px] font-mono text-slate-400 font-medium">${c.lic_id}</span>
+                </div>
+                <div class="font-bold text-slate-900 text-sm group-hover:text-blue-600 transition-colors line-clamp-2">
+                  ${escapeHtml(c.cname)}
+                </div>
+                <div class="text-xs text-slate-500 line-clamp-1 mt-1 font-sans">
+                  ${escapeHtml(c.ename || '')}
+                </div>
+                <div class="text-[11px] text-slate-400 mt-2 flex items-center gap-1">
+                  <i class="fa-solid fa-industry text-[10px]"></i>
+                  <span class="truncate">${escapeHtml(c.manufacturer || '原廠藥商')}</span>
+                </div>
+              </div>
+              <div class="mt-3.5 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-blue-600 group-hover:text-blue-700">
+                <span class="select-btn-text">👉 選擇此規格並諮詢</span>
+                <i class="fa-solid fa-arrow-right text-xs group-hover:translate-x-1 transition-transform"></i>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        confirmSection.classList.remove('hidden');
+        confirmSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        if (callback) callback(false);
+
+      } catch (err) {
+        console.error('Candidate check error:', err);
+        if (callback) callback(false);
+      }
+    }
+
+    // 使用者點選 3 個候選藥品選項之一
+    function selectCandidate(licId, cname, ename) {
+      currentSelectedLic = licId;
+      currentSelectedCname = cname;
+      isExactConfirmed = true;
+      document.getElementById('drugInput').value = cname;
+
+      // 標記已選定卡片樣式
+      document.querySelectorAll('.candidate-card').forEach(el => {
+        el.className = 'candidate-card bg-white p-4 rounded-xl border-2 border-slate-200 opacity-60 transition-all cursor-pointer flex flex-col justify-between';
+        const btnText = el.querySelector('.select-btn-text');
+        if (btnText) btnText.innerText = '👉 點此切換';
+      });
+
+      const activeCard = document.getElementById(`cand_card_${licId}`);
+      if (activeCard) {
+        activeCard.className = 'candidate-card bg-blue-50/90 p-4 rounded-xl border-2 border-blue-600 shadow-md transition-all cursor-pointer flex flex-col justify-between scale-[1.02]';
+        const btnText = activeCard.querySelector('.select-btn-text');
+        if (btnText) btnText.innerHTML = '<span class="text-emerald-600 font-bold"><i class="fa-solid fa-circle-check mr-1"></i>已選定此規格</span>';
+      }
+
+      // 更新頂部精準鎖定徽章
+      const statusBadge = document.getElementById('exactMatchStatusBadge');
+      const statusText = document.getElementById('exactMatchStatusText');
+      if (statusBadge && statusText) {
+        statusText.innerHTML = `已確認規格：<strong>${escapeHtml(cname)}</strong> (${licId})`;
+        statusBadge.classList.remove('hidden');
+      }
+
+      // 更新終端機日誌
+      const logLines = document.getElementById('logLines');
+      logLines.innerHTML += `
+        <div class="text-emerald-400 font-semibold">🎯 [規格已確認] 您選擇了「${cname}」(${licId})</div>
+        <div class="text-sky-300">⚡ 立即啟動 AI 深度研讀食藥署核定仿單...</div>
+      `;
+
+      // 立即執行已選題目的臨床諮詢查詢
+      const targetCategory = currentCategory || '01 藥品作用';
+      executeQuestionQuery(licId, cname, targetCategory);
     }
 
     // 點擊問題按鈕事件處理
@@ -287,21 +508,48 @@
         return;
       }
 
-      currentDrugName = drugName;
       currentCategory = categoryText;
 
       // 更新按鈕高亮樣式
       document.querySelectorAll('.q-btn').forEach(btn => {
         btn.className = 'q-btn p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-sm font-medium text-left transition-all flex items-center justify-between';
       });
-      btnEl.className = 'q-btn p-3 rounded-xl border border-blue-500 bg-blue-600 text-white text-sm font-medium text-left shadow-sm transition-all flex items-center justify-between';
+      if (btnEl) {
+        btnEl.className = 'q-btn p-3 rounded-xl border border-blue-500 bg-blue-600 text-white text-sm font-medium text-left shadow-sm transition-all flex items-center justify-between';
+      }
 
-      // 更新終端機日誌
+      // 若已精準確認規格，直接進行查詢
+      if (isExactConfirmed && currentSelectedLic) {
+        executeQuestionQuery(currentSelectedLic, currentSelectedCname || drugName, categoryText);
+        return;
+      }
+
+      // 若尚未確認規格，先檢查後端 API 是否為完全一樣品項 (含劑量)
+      const logLines = document.getElementById('logLines');
+      logLines.innerHTML = `
+        <div class="text-sky-400">🔍 [校驗] 正在檢查「${drugName}」是否含有多種劑量規格...</div>
+      `;
+
+      await checkAndRenderCandidates(drugName, (isExact, licId, cname) => {
+        if (isExact) {
+          // 100% 完全吻合含劑量，直接執行問題分析
+          executeQuestionQuery(licId || drugName, cname || drugName, categoryText);
+        } else {
+          // 非完全吻合，已顯示 3 個選項，提示使用者確認
+          logLines.innerHTML += `
+            <div class="text-amber-400 font-semibold">⚠️ [請確認規格] 系統偵測到「${drugName}」登載有多種劑量規格，請在上方點選 3 個選項之一確認！</div>
+          `;
+        }
+      });
+    }
+
+    // 執行向後端查詢並取得解答
+    async function executeQuestionQuery(queryParam, displayDrugName, categoryText) {
       const logLines = document.getElementById('logLines');
       logLines.innerHTML = `
         <div class="text-sky-400">🚀 [啟動] 準備發送請求至專屬 AI 代理人...</div>
-        <div class="text-teal-300">🌐 [連線] 目標網址：${API_BASE}/api/drug_insert</div>
-        <div class="text-amber-300">🔍 [資料] 藥品：「${drugName}」 | 類別：「${categoryText}」</div>
+        <div class="text-teal-300">🌐 [連線] 目標規格：${displayDrugName} (${queryParam})</div>
+        <div class="text-amber-300">🔍 [資料] 藥品：「${displayDrugName}」 | 類別：「${categoryText}」</div>
         <div class="text-slate-400 animate-pulse">⏳ [分析] 雲端正在深度研讀衛福部核定仿單全條文，請稍候...</div>
       `;
 
@@ -315,7 +563,7 @@
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            drug_name: drugName,
+            drug_name: queryParam,
             category: categoryText
           })
         });
@@ -331,15 +579,15 @@
 
         // 連線與解析成功
         logLines.innerHTML = `
-          <div class="text-sky-400">🚀 [啟動] 準備發送請求至專屬 AI 代理人...</div>
-          <div class="text-teal-300">🌐 [連線] 目標網址：${API_BASE}/api/drug_insert</div>
-          <div class="text-amber-300">🔍 [資料] 藥品：「${drugName}」 | 類別：「${categoryText}」</div>
-          <div class="text-emerald-400">📄 [解析] 成功接收來自伺服器的 JSON 資料！</div>
+          <div class="text-sky-400">🚀 [啟動] 專屬 AI 代理人已就緒</div>
+          <div class="text-teal-300">📄 [藥品] ${data.cname || displayDrugName} (${data.license_id || queryParam})</div>
+          <div class="text-amber-300">🔍 [問題] ${categoryText}</div>
+          <div class="text-emerald-400">📄 [成功] 已深度研讀食藥署最新核定仿單！</div>
           <div class="text-emerald-300 font-semibold">✨ [完成] 分析完畢，請查閱下方報告與連結。</div>
         `;
 
         // 渲染結果
-        renderResultData(data, drugName, categoryText);
+        renderResultData(data, displayDrugName, categoryText);
 
       } catch (err) {
         console.error(err);

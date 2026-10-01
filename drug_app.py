@@ -2225,6 +2225,90 @@ def search_drug_db(query: str) -> list:
                 pass
 
 
+def check_exact_match(q: str, candidates: list) -> dict:
+    """
+    判斷使用者查詢是否已達「完全一樣品項 (含劑量)」：
+    1. 使用者輸入直接吻合許可證字號 (如 衛部藥輸字第028800號, 028463)
+    2. 使用者輸入包含明確劑量規格 (如 2.5, 500mg, 10mg) 且第一候選藥品之品名/規格亦包含此劑量
+    3. 使用者輸入字串完全等於第一候選之中文名或英文名
+    4. 候選藥品僅有唯一定案 (len(candidates) == 1)
+    """
+    if not q or not candidates:
+        return {"is_exact": False, "reason": "empty"}
+
+    q_str = str(q).strip()
+    ql = q_str.lower()
+    top = candidates[0]
+    top_cname = (top[2] if isinstance(top, (list, tuple)) else top.get('cname') or '').strip()
+    top_ename = (top[3] if isinstance(top, (list, tuple)) else top.get('ename') or '').strip().lower()
+    top_lic = (top[0] if isinstance(top, (list, tuple)) else top.get('lic_id') or '').strip()
+
+    # 1. 許可證字號直接吻合
+    if q_str == top_lic or ql == top_lic.lower() or (len(q_str) >= 6 and q_str in top_lic):
+        return {"is_exact": True, "reason": "license_match", "target": top_cname, "lic_id": top_lic}
+
+    # 2. 全名完全吻合 (去除前後廠商引號)
+    clean_top_cname = re.sub(r'^["\'“”‘’\s]+', '', top_cname)
+    if q_str == top_cname or q_str == clean_top_cname or ql == top_ename:
+        return {"is_exact": True, "reason": "full_name_match", "target": top_cname, "lic_id": top_lic}
+
+    # 3. 只有唯一候選
+    if len(candidates) == 1:
+        return {"is_exact": True, "reason": "single_candidate", "target": top_cname, "lic_id": top_lic}
+
+    # 4. 劑量規格判定
+    core_name, pure_q, dose_val, mapped_terms = normalize_search_query(q_str)
+    if dose_val:
+        combined_text = f"{top_cname} {top_ename}".lower()
+        dose_pattern = rf'(?:^|[^\d.]){re.escape(dose_val)}(?:mg|毫克|g|公克|ml|毫升|公撮|mcg|微克|\b)'
+        if re.search(dose_pattern, combined_text):
+            return {"is_exact": True, "reason": "dosage_match", "target": top_cname, "dose": dose_val, "lic_id": top_lic}
+
+    return {"is_exact": False, "reason": "ambiguous_or_missing_dosage", "target": top_cname, "lic_id": top_lic}
+
+
+def pick_top_3_distinct_candidates(candidates: list) -> list:
+    """
+    從候選清單中挑選出最具代表性且規格不同的前 3 個選項供使用者確認
+    優先挑選不同劑量規格 (由小到大排列)，若不足 3 個則以候選順序補足
+    """
+    if not candidates:
+        return []
+
+    selected_with_dose = []
+    seen_doses = set()
+
+    for c in candidates:
+        cname = c.get('cname') if isinstance(c, dict) else c[2]
+        ename = c.get('ename') if isinstance(c, dict) else c[3]
+        text = f"{cname or ''} {ename or ''}"
+        m = re.search(r'(\d+(?:\.\d+)?)\s*(?:mg|毫克|公絲|g|公克|ml|毫升|公撮|mcg|微克)', text, re.IGNORECASE)
+        dose = float(m.group(1)) if m else None
+
+        if dose is not None:
+            if dose not in seen_doses:
+                seen_doses.add(dose)
+                selected_with_dose.append((dose, c))
+        else:
+            selected_with_dose.append((9999.0, c))
+
+    # 排序劑量由小到大 (常用起始劑量 -> 維持劑量 -> 高劑量)
+    selected_with_dose.sort(key=lambda x: x[0])
+    final_3 = [item[1] for item in selected_with_dose[:3]]
+
+    # 若去重後不足 3 個，以原本候選順序補足至 3 個
+    if len(final_3) < 3:
+        for c in candidates:
+            c_lic = c.get('lic_id') if isinstance(c, dict) else c[0]
+            existing_lics = [(x.get('lic_id') if isinstance(x, dict) else x[0]) for x in final_3]
+            if c_lic not in existing_lics:
+                final_3.append(c)
+            if len(final_3) == 3:
+                break
+
+    return final_3
+
+
 def extract_date_score(name: str) -> int:
     """
     從檔名或日期字串精準萃取最新核定日期分數 (YYYYMMDD 整數)
@@ -2834,6 +2918,7 @@ def fetch_tfda_drug_info(query_str: str) -> dict:
         e_insert_url = f"https://mcp.fda.gov.tw/im_detail_1/{urllib.parse.quote(lic_id)}" if (is_e_insert and lic_id) else (url or "")
 
         html_chunks = parsed_sections.get('_html_chunks', {})
+        exact_check = check_exact_match(clean_q, disambiguation_list)
 
         result = {
             "success": True,
@@ -2850,6 +2935,9 @@ def fetch_tfda_drug_info(query_str: str) -> dict:
             "is_e_insert": is_e_insert,
             "e_insert_url": e_insert_url,
             "disambiguation_list": disambiguation_list,
+            "is_exact_match": exact_check.get("is_exact", False),
+            "exact_match_type": exact_check.get("reason", ""),
+            "suggested_top_3": pick_top_3_distinct_candidates(disambiguation_list),
             "cached_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             "time_cost": f"{(time.time() - t0):.3f}s",
             "source": "TFDA 官方即時檢索 (四智能體深度研讀)",
@@ -3057,10 +3145,18 @@ def api_candidates():
                 "revision_date": "最新核定本"
             })
 
+        exact_check = check_exact_match(q, candidates)
+        top_3 = pick_top_3_distinct_candidates(candidates)
+
         return jsonify({
             "success": True,
             "query": q,
-            "candidates": candidates
+            "candidates": candidates,
+            "total": len(candidates),
+            "is_exact_match": exact_check.get("is_exact", False),
+            "exact_match_type": exact_check.get("reason", ""),
+            "target": exact_check.get("target", ""),
+            "suggested_top_3": top_3
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e), "candidates": []})
