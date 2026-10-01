@@ -280,9 +280,17 @@ FAST_INDEX = {
     "semaglutide": {"cname": "胰妥讚注射劑", "ename": "Ozempic solution for injection", "lic": "衛部菌疫輸字第001107號"},
 
     # 猛健樂 / Mounjaro / Tirzepatide
-    "mounjaro": {"cname": "猛健樂注射劑", "ename": "Mounjaro solution for injection", "lic": "衛部菌疫輸字第001248號"},
-    "猛健樂": {"cname": "猛健樂注射劑", "ename": "Mounjaro solution for injection", "lic": "衛部菌疫輸字第001248號"},
-    "tirzepatide": {"cname": "猛健樂注射劑", "ename": "Mounjaro solution for injection", "lic": "衛部菌疫輸字第001248號"},
+    "mounjaro": {"cname": "猛健樂注射劑 2.5毫克/0.5毫升", "ename": "MOUNJARO Injection 2.5mg/0.5mL", "lic": "衛部藥輸字第028463號"},
+    "猛健樂": {"cname": "猛健樂注射劑 2.5毫克/0.5毫升", "ename": "MOUNJARO Injection 2.5mg/0.5mL", "lic": "衛部藥輸字第028463號"},
+    "tirzepatide": {"cname": "猛健樂注射劑 2.5毫克/0.5毫升", "ename": "MOUNJARO Injection 2.5mg/0.5mL", "lic": "衛部藥輸字第028463號"},
+    "028463": {"cname": "猛健樂注射劑 2.5毫克/0.5毫升", "ename": "MOUNJARO Injection 2.5mg/0.5mL", "lic": "衛部藥輸字第028463號"},
+    "028464": {"cname": "猛健樂注射劑 5毫克/0.5毫升", "ename": "MOUNJARO Injection 5mg/0.5mL", "lic": "衛部藥輸字第028464號"},
+
+    # 瑞福優 / Ultomiris / Ravulizumab
+    "ultomiris": {"cname": "瑞福優濃縮注射液劑 100毫克/毫升", "ename": "Ultomiris concentrate for solution for infusion 100mg/ml", "lic": "衛部菌疫輸字第001248號"},
+    "瑞福優": {"cname": "瑞福優濃縮注射液劑 100毫克/毫升", "ename": "Ultomiris concentrate for solution for infusion 100mg/ml", "lic": "衛部菌疫輸字第001248號"},
+    "ravulizumab": {"cname": "瑞福優濃縮注射液劑 100毫克/毫升", "ename": "Ultomiris concentrate for solution for infusion 100mg/ml", "lic": "衛部菌疫輸字第001248號"},
+    "001248": {"cname": "瑞福優濃縮注射液劑 100毫克/毫升", "ename": "Ultomiris concentrate for solution for infusion 100mg/ml", "lic": "衛部菌疫輸字第001248號"},
 
     # 飛悅 / 福避痛 / Feuri / Feburic / Febuxostat
     "feuri": {"cname": "飛悅膜衣錠40毫克", "ename": "Feuri F.C. Tablets 40mg", "lic": "衛部藥製字第061186號"},
