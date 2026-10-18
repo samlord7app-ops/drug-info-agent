@@ -4,6 +4,10 @@
 [![Flask 3.0+](https://img.shields.io/badge/flask-3.0+-green.svg)](https://flask.palletsprojects.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+> 🌐 **線上即時服務入口 (Live Website)**：
+> * 🏥 **專業入口網站**：https://drug-info-agent.onrender.com
+> * 👥 **民眾入口網站**：https://drug-info-agent.onrender.com/patient
+
 > **全本地運行 · 零付費 API 依賴 · 整合衛福部食藥署 (TFDA) 72,000+ 筆藥證資料庫 · 雙軌臨床智慧衛教問答**
 
 ---
