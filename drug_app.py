@@ -3564,13 +3564,14 @@ if os.path.isdir(_VISION_DIR) and _VISION_DIR not in _sys.path:
 try:
     from app import (
         analyze_image as _vision_analyze_image,
-        proxy_tfda_pill_image as _vision_pill_image,
+        proxy_pill_image as _vision_pill_image,
         lookup_drug_api as _vision_lookup_drug,
         his_dictionaries_api as _vision_his_dicts,
         parse_ocr_text_api as _vision_parse_ocr_text,
         parse_raw_instruction as _vision_parse_instruction,
         confirm_prescription_api as _vision_confirm_prescription,
         run_demo as _vision_run_demo,
+        list_abbreviations as _vision_list_abbreviations,
     )
 
     @app.route("/vision", methods=["GET"], strict_slashes=False)
@@ -3578,9 +3579,26 @@ try:
         """提供完整『影像辨識藥品用法用量系統』Web UI 頁面"""
         vision_html_path = os.path.join(_VISION_DIR, "templates", "index.html")
         if os.path.exists(vision_html_path):
-            return send_file(vision_html_path, mimetype="text/html")
+            resp = app.make_response(send_file(vision_html_path, mimetype="text/html"))
+            resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            return resp
         return jsonify({"ok": False, "error": "找不到 templates/index.html"}), 404
 
+    @app.route("/static/samples/<path:filename>", methods=["GET"])
+    def vision_static_samples(filename):
+        sample_file = os.path.join(_VISION_DIR, "static", "samples", filename)
+        if os.path.exists(sample_file):
+            return send_file(sample_file)
+        return jsonify({"ok": False, "error": "Sample not found"}), 404
+
+    @app.route("/static/pills/<path:filename>", methods=["GET"])
+    def vision_static_pills(filename):
+        pill_file = os.path.join(_VISION_DIR, "static", "pills", filename)
+        if os.path.exists(pill_file):
+            return send_file(pill_file, mimetype="image/jpeg")
+        return jsonify({"ok": False, "error": "Pill image not found"}), 404
+
+    app.add_url_rule("/api/abbreviations", "vision_list_abbreviations", _vision_list_abbreviations, methods=["GET"])
     app.add_url_rule("/api/analyze", "vision_analyze_image", _vision_analyze_image, methods=["POST"])
     app.add_url_rule("/api/pill_image", "vision_pill_image", _vision_pill_image, methods=["GET"])
     app.add_url_rule("/api/lookup_drug", "vision_lookup_drug", _vision_lookup_drug, methods=["POST"])
