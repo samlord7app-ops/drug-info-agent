@@ -3557,22 +3557,24 @@ def api_ask():
 # 整合掛載「影像辨識藥品用法用量與食藥署藥錠外觀系統」雲端 API (/api/analyze, /api/pill_image, /vision)
 # ==============================================================================
 import sys as _sys
+import importlib.util as _importlib_util
 _VISION_DIR = os.path.join(BASE_DIR, "影像辨識藥品用法用量")
 if os.path.isdir(_VISION_DIR) and _VISION_DIR not in _sys.path:
     _sys.path.insert(0, _VISION_DIR)
 
 try:
-    from app import (
-        analyze_image as _vision_analyze_image,
-        proxy_pill_image as _vision_pill_image,
-        lookup_drug_api as _vision_lookup_drug,
-        his_dictionaries_api as _vision_his_dicts,
-        parse_ocr_text_api as _vision_parse_ocr_text,
-        parse_raw_instruction as _vision_parse_instruction,
-        confirm_prescription_api as _vision_confirm_prescription,
-        run_demo as _vision_run_demo,
-        list_abbreviations as _vision_list_abbreviations,
-    )
+    _vision_spec = _importlib_util.spec_from_file_location("vision_subapp", os.path.join(_VISION_DIR, "app.py"))
+    _vision_mod = _importlib_util.module_from_spec(_vision_spec)
+    _vision_spec.loader.exec_module(_vision_mod)
+    _vision_analyze_image = _vision_mod.analyze_image
+    _vision_pill_image = _vision_mod.proxy_pill_image
+    _vision_lookup_drug = _vision_mod.lookup_drug_api
+    _vision_his_dicts = _vision_mod.his_dictionaries_api
+    _vision_parse_ocr_text = _vision_mod.parse_ocr_text_api
+    _vision_parse_instruction = _vision_mod.parse_raw_instruction
+    _vision_confirm_prescription = _vision_mod.confirm_prescription_api
+    _vision_run_demo = _vision_mod.run_demo
+    _vision_list_abbreviations = _vision_mod.list_abbreviations
 
     @app.route("/vision", methods=["GET"], strict_slashes=False)
     def vision_web_ui():

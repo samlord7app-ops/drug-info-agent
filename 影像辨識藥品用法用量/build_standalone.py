@@ -98,6 +98,15 @@ new_js_functions = """    // 針對醫院 HIS 螢幕截圖的亮藍底反白列 
         prescription: `${apiBase}/static/samples/sample_prescription.png`
       };
 
+      // 優先 0 毫秒立即渲染內建快取樣本，避免等待雲端冷啟動造成右側空白
+      if (typeof EMBEDDED_SAMPLES !== 'undefined' && EMBEDDED_SAMPLES[sampleType]) {
+        const pack = EMBEDDED_SAMPLES[sampleType];
+        currentImageBase64 = pack.image;
+        showImagePreview(currentImageBase64, labelMap[sampleType]);
+        renderResult(JSON.parse(JSON.stringify(pack.data)));
+        document.getElementById('ocrRawTextarea').value = pack.data.raw_ocr_text || '';
+      }
+
       try {
         const imgResp = await fetch(imgUrlMap[sampleType] || imgUrlMap.his_prescription);
         if (imgResp.ok) {
@@ -112,26 +121,21 @@ new_js_functions = """    // 針對醫院 HIS 螢幕截圖的亮藍底反白列 
       } catch (e) {}
 
       try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 4000);
         const resp = await fetch(`${apiBase}/api/demo`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sample_type: sampleType })
+          body: JSON.stringify({ sample_type: sampleType }),
+          signal: ctrl.signal
         });
+        clearTimeout(t);
         const json = await resp.json();
-        if (json.ok) {
+        if (json.ok && json.data) {
           renderResult(json.data);
           document.getElementById('ocrRawTextarea').value = json.data.raw_ocr_text || '';
-          return;
         }
       } catch (e) {}
-
-      if (typeof EMBEDDED_SAMPLES !== 'undefined' && EMBEDDED_SAMPLES[sampleType]) {
-        const pack = EMBEDDED_SAMPLES[sampleType];
-        currentImageBase64 = pack.image;
-        showImagePreview(currentImageBase64, labelMap[sampleType]);
-        renderResult(pack.data);
-        document.getElementById('ocrRawTextarea').value = pack.data.raw_ocr_text || '';
-      }
     }
 
     // 免 API Key 本地端處方影像辨識與結構化解析
@@ -153,11 +157,11 @@ new_js_functions = """    // 針對醫院 HIS 螢幕截圖的亮藍底反白列 
       percentText.textContent = '45%';
       progressBar.style.width = '45%';
 
-      // 第一優先：直接呼叫後端 /api/analyze（支援 Windows Native OCR / Linux 雲端快速指紋與雲端 OCR + TFDA 72,000 筆藥典）
-      for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        // 第一優先：直接呼叫後端 /api/analyze（8 秒逾時保護，支援快速指紋比對與 TFDA 72,000 筆藥典）
         try {
           const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 22000);
+          const timer = setTimeout(() => controller.abort(), 8000);
           const resp = await fetch(`${apiBase}/api/analyze`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -178,73 +182,62 @@ new_js_functions = """    // 針對醫院 HIS 螢幕截圖的亮藍底反白列 
               if (json.data.raw_ocr_text) {
                 document.getElementById('ocrRawTextarea').value = json.data.raw_ocr_text;
               }
-              setTimeout(() => {
-                progressBox.classList.add('hidden');
-              }, 400);
               return;
-            }
-            if (json.need_client_ocr) {
-              break;
             }
           }
         } catch (backendErr) {
-          console.info(`後端呼叫嘗試 #${attempt} 警告:`, backendErr);
+          console.info('後端呼叫逾時或離線，自動切換瀏覽器即時 OCR:', backendErr);
         }
-        if (attempt === 1 && window.location.protocol !== 'file:') {
-          statusText.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>雲端伺服器喚醒中，正在重新連線辨識...';
-          percentText.textContent = '65%';
-          progressBar.style.width = '65%';
-          await new Promise(r => setTimeout(r, 1500));
-        } else {
-          break;
-        }
-      }
 
-      // 第二備援（當使用者直接以 file:// 雙擊開啟 HTML 且未啟動 Python 伺服器時，附 10 秒防卡死逾時保護）
-      statusText.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>正在啟動瀏覽器離線 OCR 備援引擎...';
-      percentText.textContent = '70%';
-      progressBar.style.width = '70%';
-      const enhancedDataUrl = await preprocessHisCanvasForOcr(currentImageBase64);
-      let extractedText = '';
-      try {
-        if (window.Tesseract) {
-          const ocrPromise = Tesseract.recognize(
-            enhancedDataUrl,
-            'eng',
-            {
-              logger: m => {
-                if (m.status === 'recognizing text' && typeof m.progress === 'number') {
-                  const pct = Math.max(70, Math.round(70 + m.progress * 28));
-                  percentText.textContent = pct + '%';
-                  progressBar.style.width = pct + '%';
+        // 第二備援：瀏覽器端 OCR + 內建 LOCAL_KB 藥典與藥品外觀即時比對（附 9 秒逾時保護）
+        statusText.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>正在執行瀏覽器高速 OCR 並比對藥品名稱與外觀...';
+        percentText.textContent = '70%';
+        progressBar.style.width = '70%';
+        const enhancedDataUrl = await preprocessHisCanvasForOcr(currentImageBase64);
+        let extractedText = '';
+        try {
+          if (window.Tesseract) {
+            const ocrPromise = Tesseract.recognize(
+              enhancedDataUrl,
+              'eng',
+              {
+                logger: m => {
+                  if (m.status === 'recognizing text' && typeof m.progress === 'number') {
+                    const pct = Math.max(70, Math.round(70 + m.progress * 28));
+                    percentText.textContent = pct + '%';
+                    progressBar.style.width = pct + '%';
+                  }
                 }
               }
-            }
-          );
-          const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 10000));
-          const result = await Promise.race([ocrPromise, timeoutPromise]);
-          extractedText = (result && result.data && result.data.text) ? result.data.text.trim() : '';
+            );
+            const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 9000));
+            const result = await Promise.race([ocrPromise, timeoutPromise]);
+            extractedText = (result && result.data && result.data.text) ? result.data.text.trim() : '';
+          }
+        } catch (ocrErr) {
+          console.warn('本地 OCR 警告:', ocrErr);
         }
-      } catch (ocrErr) {
-        console.warn('本地 OCR 警告:', ocrErr);
-      }
 
-      if (extractedText) {
-        document.getElementById('ocrRawTextarea').value = extractedText;
-      }
+        if (extractedText) {
+          document.getElementById('ocrRawTextarea').value = extractedText;
+        }
 
-      statusText.innerHTML = '<i class="fa-solid fa-check text-emerald-600 mr-1"></i>正在套用醫院 HIS 處方規則與頻次/單位對照表...';
-      percentText.textContent = '100%';
-      progressBar.style.width = '100%';
+        statusText.innerHTML = '<i class="fa-solid fa-check text-emerald-600 mr-1"></i>正在套用醫院 HIS 處方規則與頻次/單位對照表...';
+        percentText.textContent = '100%';
+        progressBar.style.width = '100%';
 
-      if (extractedText) {
-        await parseEditedOcrText();
-      } else if (typeof localParseOcrText === 'function') {
-        renderResult(localParseOcrText(document.getElementById('ocrRawTextarea').value || ''));
+        const textToParse = extractedText || (document.getElementById('ocrRawTextarea').value || '').trim();
+        if (typeof localParseOcrText === 'function') {
+          renderResult(localParseOcrText(textToParse));
+        }
+        if (textToParse) {
+          await parseEditedOcrText();
+        }
+      } finally {
+        setTimeout(() => {
+          progressBox.classList.add('hidden');
+        }, 500);
       }
-      setTimeout(() => {
-        progressBox.classList.add('hidden');
-      }, 600);
     }
 
     // 離線本地端處方文字解析備援引擎（當無後端連線時，自動比對內建 LOCAL_KB 藥典與藥錠外觀）
@@ -348,11 +341,40 @@ new_js_functions = """    // 針對醫院 HIS 螢幕截圖的亮藍底反白列 
         raw_ocr_text: clean
       };
       return typeof syncMedicationAndSchedule === 'function' ? syncMedicationAndSchedule(baseResult) : baseResult;
+    }
+
+    async function parseEditedOcrText() {
+      const text = document.getElementById('ocrRawTextarea').value.trim();
+      if (!text) {
+        alert('請先在文字框輸入處方或藥袋文字！');
+        return;
+      }
+      // 優先於本地端 0 毫秒立即渲染藥品名稱與外觀，確保畫面絕不卡頓
+      if (typeof localParseOcrText === 'function') {
+        renderResult(localParseOcrText(text));
+      }
+      const apiBase = window.location.protocol === 'file:' ? 'http://127.0.0.1:5080' : '';
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 4500);
+        const resp = await fetch(`${apiBase}/api/parse_ocr_text`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+          signal: ctrl.signal
+        });
+        clearTimeout(t);
+        const json = await resp.json();
+        if (json.ok && json.data && Array.isArray(json.data.medications) && json.data.medications.length > 0) {
+          renderResult(json.data);
+          return;
+        }
+      } catch (e) {}
     }"""
 
 html_content = re.sub(
-    r"    // 針對醫院 HIS 螢幕截圖的亮藍底反白列[\s\S]*?async function parseEditedOcrText\(\)",
-    lambda _: new_js_functions + "\n\n    async function parseEditedOcrText()",
+    r"    // 針對醫院 HIS 螢幕截圖的亮藍底反白列[\s\S]*?// 記錄目前正在展開編輯的藥品索引集合",
+    lambda _: new_js_functions + "\n\n    // 記錄目前正在展開編輯的藥品索引集合",
     html_content,
 )
 

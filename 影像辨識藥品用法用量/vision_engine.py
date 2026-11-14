@@ -743,14 +743,28 @@ def run_windows_ocr_and_reconstruct_rows(image_bytes: bytes) -> str:
     """
     if not image_bytes:
         return ""
-    if not HAS_WINOCR and not HAS_PYTESSERACT:
-        fp_txt = _match_known_prescription_fingerprint(image_bytes)
-        if fp_txt:
-            return fp_txt
+    fp_txt = _match_known_prescription_fingerprint(image_bytes)
+    if fp_txt:
+        return fp_txt
+    if not HAS_WINOCR:
         gemini_txt = _run_cloud_gemini_vision_ocr(image_bytes)
         if gemini_txt:
             return gemini_txt
-        return _run_free_ocr_space_api(image_bytes)
+        cloud_txt = _run_free_ocr_space_api(image_bytes)
+        if cloud_txt:
+            return cloud_txt
+        if HAS_PYTESSERACT:
+            try:
+                im = Image.open(BytesIO(image_bytes))
+                im = ImageOps.exif_transpose(im).convert("L")
+                if im.width > 1100:
+                    im = im.resize((1100, int(im.height * (1100 / im.width))), Image.Resampling.BILINEAR)
+                raw_tess = pytesseract.image_to_string(im, lang="eng", timeout=4)
+                cleaned_lines = [normalize_his_ocr_line(ln) for ln in (raw_tess or "").splitlines() if ln.strip()]
+                return "\n".join(cleaned_lines)
+            except Exception:
+                return ""
+        return ""
 
     try:
         img = Image.open(BytesIO(image_bytes))
@@ -2350,13 +2364,6 @@ def analyze_image_locally_without_api(image_bytes: bytes, ocr_text_from_client: 
 def get_demo_sample_result(sample_type: str = "his_prescription") -> Dict[str, Any]:
     """提供內建 4 大標準測試樣本（含基層診所 10 列點陣印表機處方箋）"""
     if sample_type == "clinic_dotmatrix":
-        clinic_sample_path = os.path.join(BASE_DIR, "static", "samples", "sample_clinic_dotmatrix.png")
-        if os.path.exists(clinic_sample_path):
-            with open(clinic_sample_path, "rb") as f:
-                ocr_txt = run_windows_ocr_and_reconstruct_rows(f.read())
-            if ocr_txt:
-                return parse_ocr_text_to_structured_data(ocr_txt)
-
         clinic_raw_text = (
             "Noca Tablets 15mg 止咳 3 1 TAB TID PO 9 TAB\n"
             "» 不良反應：偶有思睡\n"
@@ -2378,13 +2385,6 @@ def get_demo_sample_result(sample_type: str = "his_prescription") -> Dict[str, A
         return parse_ocr_text_to_structured_data(clinic_raw_text)
 
     if sample_type == "his_prescription":
-        his_sample_path = os.path.join(BASE_DIR, "static", "samples", "sample_his_prescription.png")
-        if os.path.exists(his_sample_path):
-            with open(his_sample_path, "rb") as f:
-                ocr_txt = run_windows_ocr_and_reconstruct_rows(f.read())
-            if ocr_txt:
-                return parse_ocr_text_to_structured_data(ocr_txt)
-
         his_raw_text = (
             "Citao-S f.c. tab 10 mg (G)[跌] 28 0.50 TAB HS PO 14 TAB\n"
             "» 老年人潛在性不適當用藥:在老年人可能引起或加重SIADH或低血鈉，請小心使用!\n"
