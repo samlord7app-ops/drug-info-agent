@@ -6,9 +6,12 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PORT=10000
 
-# Install minimal build tools for compiling packages if needed
+# Install minimal build tools and Tesseract OCR (Traditional Chinese + English) for cloud image analysis
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    tesseract-ocr \
+    tesseract-ocr-chi-tra \
+    tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

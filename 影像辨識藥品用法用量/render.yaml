@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: drug-vision-api
+    env: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: AUTO_OPEN_BROWSER
+        value: "0"

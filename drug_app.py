@@ -3553,6 +3553,46 @@ def api_ask():
         })
 
 
+# ==============================================================================
+# 整合掛載「影像辨識藥品用法用量與食藥署藥錠外觀系統」雲端 API (/api/analyze, /api/pill_image, /vision)
+# ==============================================================================
+import sys as _sys
+_VISION_DIR = os.path.join(BASE_DIR, "影像辨識藥品用法用量")
+if os.path.isdir(_VISION_DIR) and _VISION_DIR not in _sys.path:
+    _sys.path.insert(0, _VISION_DIR)
+
+try:
+    from app import (
+        analyze_image as _vision_analyze_image,
+        proxy_tfda_pill_image as _vision_pill_image,
+        lookup_drug_api as _vision_lookup_drug,
+        his_dictionaries_api as _vision_his_dicts,
+        parse_ocr_text_api as _vision_parse_ocr_text,
+        parse_raw_instruction as _vision_parse_instruction,
+        confirm_prescription_api as _vision_confirm_prescription,
+        run_demo as _vision_run_demo,
+    )
+
+    @app.route("/vision", methods=["GET"], strict_slashes=False)
+    def vision_web_ui():
+        """提供完整『影像辨識藥品用法用量系統』Web UI 頁面"""
+        vision_html_path = os.path.join(_VISION_DIR, "templates", "index.html")
+        if os.path.exists(vision_html_path):
+            return send_file(vision_html_path, mimetype="text/html")
+        return jsonify({"ok": False, "error": "找不到 templates/index.html"}), 404
+
+    app.add_url_rule("/api/analyze", "vision_analyze_image", _vision_analyze_image, methods=["POST"])
+    app.add_url_rule("/api/pill_image", "vision_pill_image", _vision_pill_image, methods=["GET"])
+    app.add_url_rule("/api/lookup_drug", "vision_lookup_drug", _vision_lookup_drug, methods=["POST"])
+    app.add_url_rule("/api/his_dictionaries", "vision_his_dicts", _vision_his_dicts, methods=["GET"])
+    app.add_url_rule("/api/parse_ocr_text", "vision_parse_ocr_text", _vision_parse_ocr_text, methods=["POST"])
+    app.add_url_rule("/api/parse_instruction", "vision_parse_instruction", _vision_parse_instruction, methods=["POST"])
+    app.add_url_rule("/api/confirm_prescription", "vision_confirm_prescription", _vision_confirm_prescription, methods=["POST"])
+    app.add_url_rule("/api/demo", "vision_run_demo", _vision_run_demo, methods=["POST"])
+except Exception as _vision_err:
+    print(f"[VISION MOUNT WARNING] {_vision_err}")
+
+
 @app.errorhandler(404)
 def handle_404(e):
     return jsonify({
@@ -3560,10 +3600,14 @@ def handle_404(e):
         "error": "API 路徑不存在 (Not Found)",
         "path": request.path,
         "supported_apis": [
+            "/api/analyze",
+            "/api/pill_image",
+            "/api/lookup_drug",
             "/api/drug_insert",
             "/api/candidates",
             "/api/ask",
-            "/api/health"
+            "/api/health",
+            "/vision"
         ]
     }), 404
 

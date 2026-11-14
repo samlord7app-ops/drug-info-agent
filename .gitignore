@@ -47,10 +47,12 @@ firebase_credentials.json
 credentials.json
 
 # Legacy scheduler module files (retained locally, excluded from drug-info-agent)
-app.py
-scheduler.py
-test_scheduler.py
-pharmacist_schedule_template.xlsx
-templates/index.html
-static/
+/app.py
+/scheduler.py
+/test_scheduler.py
+/pharmacist_schedule_template.xlsx
+/templates/index.html
+/static/
+影像辨識藥品用法用量/logs/
+影像辨識藥品用法用量/static/pills/orig/
 
