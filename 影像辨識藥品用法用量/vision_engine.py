@@ -258,12 +258,13 @@ def lookup_drug_in_tfda_db(raw_drug_name: str) -> Optional[Dict[str, Any]]:
             ]
             for var in dict.fromkeys(variants):
                 if strength_num:
-                    # 先找開頭匹配 + 規格匹配
+                    # 先找完整單字匹配 + 劑型偏好 + 規格匹配
                     row = cur.execute(
                         f"SELECT cname, ename, indications, form, lic_id FROM drugs "
                         f"WHERE (upper(ename) LIKE ? OR upper(ename) LIKE ?) AND ename LIKE ? "
-                        f"ORDER BY {form_order_sql} ASC, length(ifnull(status, ?)) ASC, length(ename) ASC LIMIT 1",
-                        (f"{var}%", f"% {var}%", f"%{strength_num}%", ""),
+                        f"ORDER BY CASE WHEN upper(ename) = ? OR upper(ename) LIKE ? OR upper(ename) LIKE ? THEN 0 ELSE 1 END ASC, "
+                        f"{form_order_sql} ASC, length(ifnull(status, ?)) ASC, length(ename) ASC LIMIT 1",
+                        (f"{var}%", f"% {var}%", f"%{strength_num}%", var, f"{var} %", f"% {var} %", ""),
                     ).fetchone()
                     if row:
                         app_info = _query_appearance_from_cursor(cur, lic_id=row[4], raw_drug_name=raw_drug_name)
@@ -285,8 +286,9 @@ def lookup_drug_in_tfda_db(raw_drug_name: str) -> Optional[Dict[str, Any]]:
                 row = cur.execute(
                     f"SELECT cname, ename, indications, form, lic_id FROM drugs "
                     f"WHERE upper(ename) LIKE ? OR upper(ename) LIKE ? "
-                    f"ORDER BY {form_order_sql} ASC, length(ifnull(status, ?)) ASC, length(ename) ASC LIMIT 1",
-                    (f"{var}%", f"% {var}%", ""),
+                    f"ORDER BY CASE WHEN upper(ename) = ? OR upper(ename) LIKE ? OR upper(ename) LIKE ? THEN 0 ELSE 1 END ASC, "
+                    f"{form_order_sql} ASC, length(ifnull(status, ?)) ASC, length(ename) ASC LIMIT 1",
+                    (f"{var}%", f"% {var}%", var, f"{var} %", f"% {var} %", ""),
                 ).fetchone()
                 if row:
                     app_info = _query_appearance_from_cursor(cur, lic_id=row[4], raw_drug_name=raw_drug_name)
