@@ -114,7 +114,7 @@ def _query_appearance_from_cursor(cur, lic_id: str = "", raw_drug_name: str = ""
                 "SELECT shape, color, score_line, size_mm, mark1, mark2, image_url FROM drug_appearance WHERE lic_id = ? LIMIT 1",
                 (lic_id,),
             ).fetchone()
-        if not row and raw_drug_name:
+        elif raw_drug_name:
             en_tokens = [
                 t for t in re.findall(r"[A-Za-z][A-Za-z0-9\-]{2,18}", raw_drug_name)
                 if t.upper() not in ("TAB", "TABS", "CAP", "CAPS", "POWDER", "ORAL", "FOR", "MG", "MCG", "ML", "PKG")
@@ -148,25 +148,15 @@ def _query_appearance_from_cursor(cur, lic_id: str = "", raw_drug_name: str = ""
         if rx_hint and rx_hint not in "".join(desc_parts):
             desc_parts.insert(0, f"處方標註：{rx_hint}")
         return {
-            "shape": shape or (rx_hint if rx_hint else "依藥袋實體為準"),
-            "color": color or (rx_hint if rx_hint else "-"),
-            "score_line": score_line or "無",
-            "size_mm": size_str or "-",
-            "mark": marks or "-",
+            "shape": shape or "",
+            "color": color or "",
+            "score_line": score_line or "",
+            "size_mm": size_str or "",
+            "mark": marks or "",
             "image_url": image_url or "",
-            "desc": " ｜ ".join(desc_parts) if desc_parts else "請參照藥袋或實體藥品外觀",
+            "desc": " ｜ ".join(desc_parts) if desc_parts else "",
         }
 
-    if rx_hint:
-        return {
-            "shape": rx_hint,
-            "color": rx_hint,
-            "score_line": "-",
-            "size_mm": "-",
-            "mark": "-",
-            "image_url": "",
-            "desc": f"處方標註外觀：{rx_hint}",
-        }
     return {}
 
 
@@ -1455,7 +1445,7 @@ def enrich_medication_result(data: Dict[str, Any]) -> Dict[str, Any]:
         if not med.get("timing_text"):
             med["timing_text"] = freq_info.get("default_timing", "依醫囑服用")
 
-        # 若尚未附帶藥品外觀 (例如來自雲端 Gemini 辨識或外部匯入)，自動透過 TFDA 藥典補齊外觀與圖檔
+        # 若尚未附帶藥品外觀 (例如來自雲端 Gemini 辨識或外部匯入)，自動透過 TFDA 藥典補齊外觀與圖檔；若查無外觀紀錄則保持空物件 {}
         app_obj = med.get("appearance")
         if not isinstance(app_obj, dict) or not (app_obj.get("desc") or app_obj.get("image_url") or app_obj.get("shape")):
             kb_hit = lookup_drug_in_tfda_db(
@@ -1467,15 +1457,9 @@ def enrich_medication_result(data: Dict[str, Any]) -> Dict[str, Any]:
                 if kb_hit.get("appearance"):
                     med["appearance"] = dict(kb_hit["appearance"])
                 else:
-                    med["appearance"] = {
-                        "shape": "", "color": "", "score_line": "", "size_mm": "",
-                        "mark": "", "image_url": "", "desc": f"{med.get('dosage_form') or '一般劑型'}（依藥袋實體為準）"
-                    }
+                    med["appearance"] = {}
             else:
-                med["appearance"] = {
-                    "shape": "", "color": "", "score_line": "", "size_mm": "",
-                    "mark": "", "image_url": "", "desc": f"{med.get('dosage_form') or '一般劑型'}（依藥袋實體為準）"
-                }
+                med["appearance"] = {}
 
         slots = med.get("time_slots") or ["morning"]
         for slot in slots:
