@@ -397,7 +397,7 @@ def normalize_his_ocr_line(line: str) -> str:
 
     # 6. 修復單位 TAB / CAP / PKG / BTL / PK 誤認
     s = re.sub(r"\b(?:TkB|Tkb|TÅB|TIB|1AB|TA8|TIE|STkB|TAE|TAR|T4B|IAB|7AB|FAB|YAB|TAD|TAP|TRB|THB|TNB)\b", "TAB", s)
-    s = re.sub(r"\b(?:C4P|cAp|CRP|CNP|CAF|CAB|GAP|OAP)\b", "CAP", s)
+    s = re.sub(r"\b(?:C4P|cAp|CRP|CNP|CAF|CAB|CAR|GAP|OAP)\b", "CAP", s)
     s = re.sub(r"\b(?:PK6|PKC|PRG)\b", "PKG", s)
     s = re.sub(r"\b(?:8TL|BT1|B7L)\b", "BTL", s)
     s = re.sub(r"\b(?:8OT|B0T)\b", "BOT", s)
@@ -416,17 +416,20 @@ def normalize_his_ocr_line(line: str) -> str:
     s = re.sub(r"(?:\bI\b|\bl\b|!\.?|\||\[|\])(?=\s*(?:TAB|CAP|PKG|PK|PACK|BTL|BOT|AMP|VIAL|TUBE|PUFF|SUPP|PATCH))", "1", s, flags=re.IGNORECASE)
     s = re.sub(r"\b23(?=\s+(?:0\.50|0\.25|1|2)\s+(?:TAB|CAP))", "28", s, flags=re.IGNORECASE)
 
-    # 9. 修復複合頻次空白與頻次/途徑 OCR 誤認
+    # 9. 修復複合頻次空白與頻次/途徑 OCR 誤認（含瀏覽器 Tesseract 常見誤讀如 SPD sO Se / dD 9px / TIDE ax / 7%）
+    s = re.sub(r"\bSPD\s+sO\s+Se\b", "PO QD 7天", s, flags=re.IGNORECASE)
     s = re.sub(r"\b(QD|BID|TID|QID)\s+(AC|PC)\b", r"\1\2", s, flags=re.IGNORECASE)
     s = re.sub(r"\bQD\s+(AM|PM)\b", r"QD\1", s, flags=re.IGNORECASE)
     s = re.sub(r"\b(HS|QD|BID|TID|QID)\s+PRN\b", r"\1PRN", s, flags=re.IGNORECASE)
 
     s = re.sub(r"\b(?:Ft\)|11\)|P0|PQ|PD|FO)\s+(?=(?:QD|BID|TID|QID|HS|PRN|Qib|\(D|Q')\b)", "PO ", s, flags=re.IGNORECASE)
     s = re.sub(r"\b(PO|TAB|CAP|PKG|PK|BTL|BOT|AMP|VIAL|ML|CC|PUFF|GTT)\s+(?:BS|H5|H\$|H8|MS|NS)\b", r"\1 HS", s)
-    s = re.sub(r"\b(PO|TAB|CAP|PKG|PK|BTL|BOT|AMP|VIAL|ML|CC|PUFF|GTT)\s+(?:Qb|Q0|QO|0D|GD|\(D|Q')\b", r"\1 QD", s)
+    s = re.sub(r"\b(PO|TAB|CAP|PKG|PK|BTL|BOT|AMP|VIAL|ML|CC|PUFF|GTT)\s+(?:Qb|Q0|QO|0D|GD|dD|\(D|Q')\b", r"\1 QD", s)
     s = re.sub(r"\b(?:B1D|8ID|BlD|BIO|B1O)\b", "BID", s)
-    s = re.sub(r"\b(?:T1D|TlD|TIO|7ID|T1O)\b", "TID", s)
+    s = re.sub(r"\b(?:T1D|TlD|TIO|7ID|T1O|TIDE)\b", "TID", s)
     s = re.sub(r"\b(?:Q1D|QlD|0ID|QIO|Qib|QIB)\b", "QID", s)
+    s = re.sub(r"\b(QD|BID|TID|QID|HS|PO)\s+9px\b", r"\1 90天", s, flags=re.IGNORECASE)
+    s = re.sub(r"\b(QD|BID|TID|QID|HS|PO)\s+(?:ax|7%)(?=\s+\d+)", r"\1 7天", s, flags=re.IGNORECASE)
     s = re.sub(r"\b(?:P0|PQ|PD|FO)(?=\s+\d+|\s*$)", "PO", s)
 
     # 10. 支援基層診所點陣印表機處方箋格式 (如 1.01) -> 1.00, 9.1) -> 9.0, 3.1) -> 3.0, 7.00ccx3x 3 -> 7 CC TID PO 3, x3x 3 -> TID PO 3, x1x 3 -> QD PO 3)
