@@ -171,6 +171,14 @@ def lookup_drug_in_tfda_db(raw_drug_name: str) -> Optional[Dict[str, Any]]:
 
     upper_query = raw_drug_name.upper().strip()
 
+    # 排除純學名/主成份宣告列或用法用量/欄位說明列，避免拿共用學名(如 SENNOSIDE 12MG)或用法單字(如 30MINS)盲目猜測錯誤廠牌藥名
+    if re.match(
+        r"^(?:主成份名|主成份|主成分名|主成分|成份名|成份|成分名|成分|學名|Ingredient|Ingredients|Generic(?:\s*Name)?|用量用法|用法用量|Dosage|每次|作用|適應症|副作用|警語|注意事項|儲位|藥品外觀|外觀|廠牌|製造廠名|病患姓名|看診科別)[：:\s]",
+        raw_drug_name.strip(),
+        re.IGNORECASE,
+    ):
+        return None
+
     # 1. 先比對內建臨床知識庫 (含高齡 PIM、安眠藥/腎功能警語與食藥署藥品外觀)
     for kb in LOCAL_DRUG_KNOWLEDGE_BASE:
         if any(kw.upper() in upper_query for kw in kb["keywords"]):
@@ -209,34 +217,36 @@ def lookup_drug_in_tfda_db(raw_drug_name: str) -> Optional[Dict[str, Any]]:
                     "precautions": f"衛福部核准字號：{row[4]}（健保碼：{nhi_match.group(0)}）。請依醫囑按時服用。",
                 }
 
-        # 2B. 先嘗試中文藥名檢索（包含「中文藥名：...」標籤或劑型關鍵字如：錠、膠囊、糖漿、軟膏、注射、藥水、散、粒、液）
-        zh_label_match = re.search(r"(?:中文藥名|藥品名稱|藥名)[：:\s]*([\u4e00-\u9fa5A-Za-z0-9\-\s]{2,22})", raw_drug_name)
+        # 2B. 先嘗試中文藥名檢索（包含「中文藥名/中文品名：...」標籤或劑型關鍵字如：錠、膠囊、糖漿、軟膏、注射、藥水、散、粒、液）
+        zh_label_match = re.search(r"(?:中文藥名|中文品名|藥品名稱|藥名)[：:\s]*([\u4e00-\u9fa5A-Za-z0-9\-\s]{2,22})", raw_drug_name)
         zh_drug_match = zh_label_match or re.search(
             r"([\u4e00-\u9fa5]{2,12}[A-Za-z]?(?:持續釋放口溶錠|持續性藥效膜衣錠|膜衣錠|腸溶微粒膠囊|腸溶錠|持續性藥效錠|持續性釋放錠|持續釋放膠囊|緩釋錠|口溶錠|咀嚼錠|發泡錠|糖衣錠|錠|膠囊|糖漿|軟膏|乳膏|凝膠|眼藥水|點眼液|鼻噴劑|吸入劑|注射劑|注射液|外用液|內服液|栓劑|塞劑|貼片|散|顆粒))",
             raw_drug_name,
         )
         if zh_drug_match:
             zh_kw = re.sub(r"\d+(?:\.\d+)?\s*(?:毫克|公絲|微克|公克|mg|mcg|g).*", "", zh_drug_match.group(1), flags=re.IGNORECASE).strip()
-            row = cur.execute(
-                "SELECT cname, ename, indications, form, lic_id FROM drugs WHERE cname LIKE ? ORDER BY length(ifnull(status, ?)) ASC LIMIT 1",
-                (f"%{zh_kw}%", ""),
-            ).fetchone()
-            if row:
-                app_info = _query_appearance_from_cursor(cur, lic_id=row[4], raw_drug_name=raw_drug_name)
-                conn.close()
-                return {
-                    "lic_id": row[4],
-                    "drug_name_zh": row[0],
-                    "drug_name_en": row[1] or raw_drug_name,
-                    "generic_name": row[1] or "-",
-                    "strength": row[3] or "依藥袋標示",
-                    "dosage_form": row[3] or "一般劑型",
-                    "badges": [],
-                    "appearance": app_info,
-                    "indication": row[2] or "依醫師處方使用",
-                    "side_effects": "若有異常不適請回診諮詢醫師或藥師",
-                    "precautions": f"衛福部核准字號：{row[4]}。請依醫囑按時服用。",
-                }
+            # 排除將外觀描述（如「土黃色圓形錠」、「白色圓形錠」）誤當成中文藥名
+            if not re.search(r"(?:色|圓形|橢圓|長圓|方形|三角|五角|六角|八角|菱形|雙凸|平扁|刻痕)", zh_kw):
+                row = cur.execute(
+                    "SELECT cname, ename, indications, form, lic_id FROM drugs WHERE cname LIKE ? ORDER BY length(ifnull(status, ?)) ASC LIMIT 1",
+                    (f"%{zh_kw}%", ""),
+                ).fetchone()
+                if row:
+                    app_info = _query_appearance_from_cursor(cur, lic_id=row[4], raw_drug_name=raw_drug_name)
+                    conn.close()
+                    return {
+                        "lic_id": row[4],
+                        "drug_name_zh": row[0],
+                        "drug_name_en": row[1] or raw_drug_name,
+                        "generic_name": row[1] or "-",
+                        "strength": row[3] or "依藥袋標示",
+                        "dosage_form": row[3] or "一般劑型",
+                        "badges": [],
+                        "appearance": app_info,
+                        "indication": row[2] or "依醫師處方使用",
+                        "side_effects": "若有異常不適請回診諮詢醫師或藥師",
+                        "precautions": f"衛福部核准字號：{row[4]}。請依醫囑按時服用。",
+                    }
 
         # 2C. 若藥袋印有「外觀：...印字代碼 (如 D751)」，可透過 drug_appearance 表面印字反查藥證
         imprint_match = re.search(r"外觀[：:\s]*[^\n,，]*[,，\s]+([A-Za-z]{1,4}\s*\d{2,5})\b", raw_drug_name)
@@ -269,19 +279,30 @@ def lookup_drug_in_tfda_db(raw_drug_name: str) -> Optional[Dict[str, Any]]:
                     "precautions": f"衛福部核准字號：{lic_hit}。請依醫囑按時服用。",
                 }
 
-        # 提取英文商品名/學名候選詞 (長度至少 3 字元，並排除所有處方頻次、單位、劑型與途徑縮寫)
-        en_tokens = re.findall(r"[A-Za-z][A-Za-z0-9\-]{2,20}", raw_drug_name)
+        # 提取英文商品名候選詞 (長度至少 4 字元，並排除所有處方頻次、單位、劑型、用法時間與常見共用學名詞彙)
+        en_tokens = re.findall(r"[A-Za-z][A-Za-z0-9\-]{3,20}", raw_drug_name)
         stop_words = {
             "TAB", "TABS", "TABLET", "TABLETS", "CAP", "CAPS", "CAPSULE", "CAPSULES",
-            "MG", "ML", "GM", "MCG", "ORAL", "INJ", "INJECTION", "DOSE", "ADMINISTRATION",
+            "MG", "ML", "GM", "MCG", "ORAL", "INJ", "INJECTION", "DOSE", "DOSAGE", "ADMINISTRATION",
             "PFIZER", "NVC", "FILM", "COATED", "SCORED", "ENTERIC", "SUSTAINED", "EXTENDED",
             "RELEASE", "SOLUTION", "SYRUP", "OINTMENT", "CREAM", "GEL", "DROPS", "SPRAY",
-            "POWDER", "GRANULES", "FOR", "AND", "WITH", "HCL", "SODIUM", "CALCIUM",
+            "POWDER", "GRANULES", "FOR", "AND", "WITH", "FROM", "THIS", "THAT",
+            "HCL", "SODIUM", "CALCIUM", "POTASSIUM", "MAGNESIUM", "SULFATE", "ACETATE",
+            "TARTRATE", "MALEATE", "CITRATE", "PHOSPHATE", "SUCCINATE", "FUMARATE", "BESYLATE", "MESYLATE",
+            "MINS", "MIN", "MINUTE", "MINUTES", "HOUR", "HOURS", "BEFORE", "AFTER",
+            "BEDTIME", "MEAL", "MEALS", "MORNING", "NOON", "NIGHT", "EVENING", "SLEEP",
+            "EACH", "TIME", "TIMES", "DAILY", "ONCE", "TWICE", "TAKE", "TAKEN", "USE",
+            "INDICATION", "INDICATIONS", "SIDE", "EFFECT", "EFFECTS", "WARNING", "WARNINGS",
+            "STORAGE", "LOCATION", "NAME", "PATIENT", "HOSPITAL", "CLINIC", "PHARMACY",
+            "SENNOSIDE", "SENNOSIDES",
             *VALID_FREQ_CODES,
             *VALID_UNIT_CODES,
             *VALID_ROUTE_CODES,
         }
-        brand_candidates = [t for t in en_tokens if t.upper() not in stop_words and len(t) >= 3]
+        brand_candidates = [
+            t for t in en_tokens
+            if t.upper() not in stop_words and not re.match(r"^\d", t) and len(t) >= 4
+        ]
 
         # 提取規格數字 (如 10, 20, 2, 500, 0.5, 0.25, 5)
         strength_num = None
@@ -304,24 +325,18 @@ def lookup_drug_in_tfda_db(raw_drug_name: str) -> Optional[Dict[str, Any]]:
 
         for brand in brand_candidates[:3]:
             b_up = brand.upper()
-            # 產生 OCR 容錯候選詞 (例如 0<->O, 1<->I<->L, RN<->M)
+            # 僅針對原始詞與高可信 OCR 字元替換查找，且必須為藥證英文品名之「首字完整單字匹配」(不可用字首 LIKE 'VAR%' 將 MINS 對到 MINSUNON)
             variants = [
                 b_up,
                 b_up.replace("0", "O"),
-                b_up.replace("1", "L"),
-                b_up.replace("1", "I"),
-                b_up.replace("I", "L"),
-                b_up.replace("L", "I"),
             ]
             for var in dict.fromkeys(variants):
                 if strength_num:
-                    # 先找完整單字匹配 + 劑型偏好 + 規格匹配
                     row = cur.execute(
                         f"SELECT cname, ename, indications, form, lic_id FROM drugs "
-                        f"WHERE (upper(ename) LIKE ? OR upper(ename) LIKE ?) AND ename LIKE ? "
-                        f"ORDER BY CASE WHEN upper(ename) = ? OR upper(ename) LIKE ? OR upper(ename) LIKE ? THEN 0 ELSE 1 END ASC, "
-                        f"{form_order_sql} ASC, length(ifnull(status, ?)) ASC, length(ename) ASC LIMIT 1",
-                        (f"{var}%", f"% {var}%", f"%{strength_num}%", var, f"{var} %", f"% {var} %", ""),
+                        f"WHERE (upper(ename) = ? OR upper(ename) LIKE ? OR upper(ename) LIKE ?) AND ename LIKE ? "
+                        f"ORDER BY {form_order_sql} ASC, length(ifnull(status, ?)) ASC, length(ename) ASC LIMIT 1",
+                        (var, f"{var} %", f"\"{var} %", f"%{strength_num}%", ""),
                     ).fetchone()
                     if row:
                         app_info = _query_appearance_from_cursor(cur, lic_id=row[4], raw_drug_name=raw_drug_name)
@@ -342,10 +357,9 @@ def lookup_drug_in_tfda_db(raw_drug_name: str) -> Optional[Dict[str, Any]]:
 
                 row = cur.execute(
                     f"SELECT cname, ename, indications, form, lic_id FROM drugs "
-                    f"WHERE upper(ename) LIKE ? OR upper(ename) LIKE ? "
-                    f"ORDER BY CASE WHEN upper(ename) = ? OR upper(ename) LIKE ? OR upper(ename) LIKE ? THEN 0 ELSE 1 END ASC, "
-                    f"{form_order_sql} ASC, length(ifnull(status, ?)) ASC, length(ename) ASC LIMIT 1",
-                    (f"{var}%", f"% {var}%", var, f"{var} %", f"% {var} %", ""),
+                    f"WHERE upper(ename) = ? OR upper(ename) LIKE ? OR upper(ename) LIKE ? "
+                    f"ORDER BY {form_order_sql} ASC, length(ifnull(status, ?)) ASC, length(ename) ASC LIMIT 1",
+                    (var, f"{var} %", f"\"{var} %", ""),
                 ).fetchone()
                 if row:
                     app_info = _query_appearance_from_cursor(cur, lic_id=row[4], raw_drug_name=raw_drug_name)
@@ -2108,7 +2122,23 @@ def parse_ocr_text_to_structured_data(raw_ocr_text: str) -> Dict[str, Any]:
     """
     clean_text = (raw_ocr_text or "").strip()
     if not clean_text:
-        return get_demo_sample_result("his_prescription")
+        return enrich_medication_result({
+            "document_type": "⚠️ 無法辨識藥品名稱",
+            "engine_used": "Windows 原生 3 通道座標 OCR + 容錯 Token 引擎 + 食藥署 72,000 筆藥證庫",
+            "recognition_failed": True,
+            "patient_info": {
+                "hospital_name": "-",
+                "patient_name": "-",
+                "department": "-",
+                "dispense_date": "-",
+                "prescription_no": "-",
+            },
+            "medications": [],
+            "overall_warnings": [
+                "⚠️ 無法從照片中辨識出明確藥品名稱（影像可能失焦模糊、字跡過淡或反光，系統秉持「辨識不出來就說辨識不出來」原則，絕不強行猜測錯誤藥品；請重新拍攝清晰正面照片，或點擊「＋ 新增遺漏藥品」手動輸入查詢）。"
+            ],
+            "raw_ocr_text": "",
+        })
 
     raw_lines = [ln.strip() for ln in clean_text.splitlines() if ln.strip()]
     lines = _split_merged_his_lines(raw_lines)
@@ -2173,8 +2203,11 @@ def parse_ocr_text_to_structured_data(raw_ocr_text: str) -> Dict[str, Any]:
             sub_classified = classify_his_subrow_notes(sub_lines)
             freq_info = translate_frequency(his_row["freq_code"])
 
-            # 查詢內建知識庫與 TFDA 72,000 筆藥證資料庫
+            # 查詢內建知識庫與 TFDA 72,000 筆藥證資料庫；若完全查無對應藥證，絕不拿殘缺 OCR 碎片硬湊假藥品
             matched_kb = lookup_drug_in_tfda_db(his_row["clean_drug_name"])
+            if not matched_kb:
+                i = j
+                continue
 
             dose_qty = his_row["dose_quantity"]
             unit_zh = his_row["dose_unit_zh"]
@@ -2318,50 +2351,58 @@ def parse_ocr_text_to_structured_data(raw_ocr_text: str) -> Dict[str, Any]:
             "confidence": "high",
         })
 
-    # Step C: 保底解析（若僅輸入純用法文字如 "1# BID PC 28d"）
+    # Step C: 保底解析（僅在全文能明確比對出 TFDA 藥典藥品時才建立卡片；若辨識不出明確藥名則誠實回報無法辨識，絕不硬湊）
     if not medications:
-        parsed_info = _extract_freq_and_timing(clean_text)
         matched_kb = lookup_drug_in_tfda_db(clean_text)
-        medications.append({
-            "id": 1,
-            "lic_id": matched_kb.get("lic_id", "") if matched_kb else "",
-            "drug_name_zh": matched_kb["drug_name_zh"] if matched_kb else clean_text.splitlines()[0][:40],
-            "drug_name_en": matched_kb["drug_name_en"] if matched_kb else "-",
-            "generic_name": matched_kb["generic_name"] if matched_kb else "-",
-            "strength": matched_kb["strength"] if matched_kb else "-",
-            "dosage_form": matched_kb.get("dosage_form", "一般劑型") if matched_kb else "一般劑型",
-            "appearance": dict(matched_kb.get("appearance") or {}) if matched_kb else {},
-            "badges": [],
-            "doctor_dose_note": "",
-            "his_subrows": [],
-            **parsed_info,
-            "indication": matched_kb["indication"] if matched_kb else "依醫師處方使用",
-            "side_effects": "詳見藥袋標示",
-            "precautions": "請依藥袋或處方指示定時定量服用。",
-            "raw_instruction": clean_text[:140],
-            "plain_summary": f"{parsed_info['frequency_text']}，{parsed_info['timing_text']}，{parsed_info['dosage_per_time']}（{parsed_info['route']}）。",
-            "confidence": "medium",
-        })
+        if matched_kb:
+            parsed_info = _extract_freq_and_timing(clean_text)
+            medications.append({
+                "id": 1,
+                "lic_id": matched_kb.get("lic_id", ""),
+                "drug_name_zh": matched_kb["drug_name_zh"],
+                "drug_name_en": matched_kb["drug_name_en"],
+                "generic_name": matched_kb["generic_name"],
+                "strength": matched_kb["strength"],
+                "dosage_form": matched_kb.get("dosage_form", "一般劑型"),
+                "appearance": dict(matched_kb.get("appearance") or {}),
+                "badges": matched_kb.get("badges", []),
+                "doctor_dose_note": "",
+                "his_subrows": [],
+                **parsed_info,
+                "indication": matched_kb["indication"],
+                "side_effects": matched_kb.get("side_effects", "詳見藥袋標示"),
+                "precautions": matched_kb.get("precautions", "請依藥袋或處方指示定時定量服用。"),
+                "raw_instruction": clean_text[:140],
+                "plain_summary": f"{parsed_info['frequency_text']}，{parsed_info['timing_text']}，{parsed_info['dosage_per_time']}（{parsed_info['route']}）。",
+                "confidence": "high",
+            })
+
+    recognition_failed = len(medications) == 0
+    if recognition_failed:
+        overall_warnings = [
+            "⚠️ 無法從照片中辨識出明確藥品名稱（可能因影像失焦模糊、字跡過淡，或僅讀出共用學名成分而無法確認唯一廠牌；系統秉持「辨識不出來就說辨識不出來」原則，絕不強行猜測錯誤藥品。請重新拍攝清晰正面照片，或點擊「＋ 新增遺漏藥品」手動輸入查詢）。"
+        ]
 
     hosp_match = re.search(r"([^\s\n]{2,20}(?:醫院|診所|藥局|醫學中心))", clean_text)
-    hospital_name = hosp_match.group(1) if hosp_match else "醫院 HIS 門診處方系統"
+    hospital_name = hosp_match.group(1) if hosp_match else ("-" if recognition_failed else "醫院 HIS 門診處方系統")
 
     name_match = re.search(r"(?:病患姓名|姓名)[：:\s]*([^\s\n(（]{2,8})", clean_text)
-    patient_name = name_match.group(1) if name_match else "門診病患 (高齡長者)"
+    patient_name = name_match.group(1) if name_match else ("-" if recognition_failed else "門診病患")
 
     dept_match = re.search(r"(?:看診科別|科別)[：:\s]*([^\s\n]{2,12})", clean_text)
-    department = dept_match.group(1) if dept_match else "門診處方"
+    department = dept_match.group(1) if dept_match else ("-" if recognition_failed else "門診處方")
 
     date_match = re.search(r"(20\d{2}[-/年]\d{1,2}[-/月]\d{1,2}日?)", clean_text)
-    dispense_date = date_match.group(1) if date_match else "2026-10-29"
+    dispense_date = date_match.group(1) if date_match else ("-" if recognition_failed else "2026-10-29")
 
     rx_match = re.search(r"(?:領藥號|處方編號|編號)[：:\s]*([A-Za-z0-9\-]+)", clean_text)
-    prescription_no = rx_match.group(1) if rx_match else "HIS-CPOE"
+    prescription_no = rx_match.group(1) if rx_match else ("-" if recognition_failed else "HIS-CPOE")
 
-    doc_type = "醫院 HIS 醫令處方箋" if len(medications) > 1 else "藥袋 / 單一處方"
+    doc_type = "⚠️ 無法辨識藥品名稱" if recognition_failed else ("醫院 HIS 醫令處方箋" if len(medications) > 1 else "藥袋 / 單一處方")
     result = {
         "document_type": doc_type,
         "engine_used": "Windows 原生 3 通道座標 OCR + 容錯 Token 引擎 + 食藥署 72,000 筆藥證庫",
+        "recognition_failed": recognition_failed,
         "patient_info": {
             "hospital_name": hospital_name,
             "patient_name": patient_name,
@@ -2397,7 +2438,7 @@ def analyze_image_locally_without_api(image_bytes: bytes, ocr_text_from_client: 
             pass
         backend_ocr_text = run_windows_ocr_and_reconstruct_rows(image_bytes)
 
-    final_ocr_text = backend_ocr_text if len(backend_ocr_text.strip()) >= 8 else (ocr_text_from_client or "").strip()
+    final_ocr_text = backend_ocr_text if len(backend_ocr_text.strip()) >= 4 else (ocr_text_from_client or "").strip()
     if final_ocr_text:
         parsed_res = parse_ocr_text_to_structured_data(final_ocr_text)
         try:
@@ -2417,10 +2458,7 @@ def analyze_image_locally_without_api(image_bytes: bytes, ocr_text_from_client: 
             pass
         return parsed_res
 
-    if image_bytes:
-        return {"_need_client_ocr": True}
-
-    return get_demo_sample_result("his_prescription")
+    return parse_ocr_text_to_structured_data("")
 
 
 def get_demo_sample_result(sample_type: str = "his_prescription") -> Dict[str, Any]:
