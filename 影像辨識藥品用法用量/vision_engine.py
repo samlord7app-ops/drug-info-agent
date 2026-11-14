@@ -184,13 +184,39 @@ def lookup_drug_in_tfda_db(raw_drug_name: str) -> Optional[Dict[str, Any]]:
         conn = sqlite3.connect(TFDA_DB_PATH)
         cur = conn.cursor()
 
-        # 先嘗試中文藥名檢索（包含劑型關鍵字如：錠、膠囊、糖漿、軟膏、注射、藥水、散、粒、液）
-        zh_drug_match = re.search(
-            r"([\u4e00-\u9fa5]{2,12}(?:膜衣錠|腸溶微粒膠囊|腸溶錠|持續性藥效錠|持續性釋放錠|緩釋錠|口溶錠|咀嚼錠|發泡錠|糖衣錠|錠|膠囊|糖漿|軟膏|乳膏|凝膠|眼藥水|點眼液|鼻噴劑|吸入劑|注射劑|注射液|外用液|內服液|栓劑|塞劑|貼片|散|顆粒))",
+        # 2A. 優先支援台灣 10 碼健保藥品代碼反查（如 健保碼：AC58548100 -> 第 3~7 碼 58548 對應食藥署字號第 058548 號）
+        nhi_match = re.search(r"\b([AB][0ABC])(\d{5})\d{2,3}[A-Z0-9]?\b", upper_query)
+        if nhi_match:
+            lic_num_6 = f"0{nhi_match.group(2)}"
+            row = cur.execute(
+                "SELECT cname, ename, indications, form, lic_id FROM drugs WHERE lic_id LIKE ? ORDER BY length(ifnull(status, '')) ASC LIMIT 1",
+                (f"%{lic_num_6}號",),
+            ).fetchone()
+            if row:
+                app_info = _query_appearance_from_cursor(cur, lic_id=row[4], raw_drug_name=raw_drug_name)
+                conn.close()
+                return {
+                    "lic_id": row[4],
+                    "drug_name_zh": row[0],
+                    "drug_name_en": row[1] or raw_drug_name,
+                    "generic_name": row[1] or "-",
+                    "strength": row[3] or "依藥袋標示",
+                    "dosage_form": row[3] or "一般劑型",
+                    "badges": [],
+                    "appearance": app_info,
+                    "indication": row[2] or "依醫師處方使用",
+                    "side_effects": "若有異常不適請回診諮詢醫師或藥師",
+                    "precautions": f"衛福部核准字號：{row[4]}（健保碼：{nhi_match.group(0)}）。請依醫囑按時服用。",
+                }
+
+        # 2B. 先嘗試中文藥名檢索（包含「中文藥名：...」標籤或劑型關鍵字如：錠、膠囊、糖漿、軟膏、注射、藥水、散、粒、液）
+        zh_label_match = re.search(r"(?:中文藥名|藥品名稱|藥名)[：:\s]*([\u4e00-\u9fa5A-Za-z0-9\-\s]{2,22})", raw_drug_name)
+        zh_drug_match = zh_label_match or re.search(
+            r"([\u4e00-\u9fa5]{2,12}[A-Za-z]?(?:持續釋放口溶錠|持續性藥效膜衣錠|膜衣錠|腸溶微粒膠囊|腸溶錠|持續性藥效錠|持續性釋放錠|持續釋放膠囊|緩釋錠|口溶錠|咀嚼錠|發泡錠|糖衣錠|錠|膠囊|糖漿|軟膏|乳膏|凝膠|眼藥水|點眼液|鼻噴劑|吸入劑|注射劑|注射液|外用液|內服液|栓劑|塞劑|貼片|散|顆粒))",
             raw_drug_name,
         )
         if zh_drug_match:
-            zh_kw = zh_drug_match.group(1)
+            zh_kw = re.sub(r"\d+(?:\.\d+)?\s*(?:毫克|公絲|微克|公克|mg|mcg|g).*", "", zh_drug_match.group(1), flags=re.IGNORECASE).strip()
             row = cur.execute(
                 "SELECT cname, ename, indications, form, lic_id FROM drugs WHERE cname LIKE ? ORDER BY length(ifnull(status, ?)) ASC LIMIT 1",
                 (f"%{zh_kw}%", ""),
@@ -210,6 +236,37 @@ def lookup_drug_in_tfda_db(raw_drug_name: str) -> Optional[Dict[str, Any]]:
                     "indication": row[2] or "依醫師處方使用",
                     "side_effects": "若有異常不適請回診諮詢醫師或藥師",
                     "precautions": f"衛福部核准字號：{row[4]}。請依醫囑按時服用。",
+                }
+
+        # 2C. 若藥袋印有「外觀：...印字代碼 (如 D751)」，可透過 drug_appearance 表面印字反查藥證
+        imprint_match = re.search(r"外觀[：:\s]*[^\n,，]*[,，\s]+([A-Za-z]{1,4}\s*\d{2,5})\b", raw_drug_name)
+        if imprint_match:
+            imp_raw = imprint_match.group(1).strip().upper()
+            imp_spaced = re.sub(r"^([A-Z]+)\s*(\d+)$", r"\1 \2", imp_raw)
+            app_row = cur.execute(
+                "SELECT lic_id, cname, ename FROM drug_appearance WHERE upper(mark1) IN (?, ?) OR upper(mark2) IN (?, ?) LIMIT 1",
+                (imp_raw, imp_spaced, imp_raw, imp_spaced),
+            ).fetchone()
+            if app_row:
+                lic_hit = app_row[0]
+                d_row = cur.execute(
+                    "SELECT cname, ename, indications, form, lic_id FROM drugs WHERE lic_id = ? LIMIT 1",
+                    (lic_hit,),
+                ).fetchone()
+                app_info = _query_appearance_from_cursor(cur, lic_id=lic_hit, raw_drug_name=raw_drug_name)
+                conn.close()
+                return {
+                    "lic_id": lic_hit,
+                    "drug_name_zh": d_row[0] if d_row else app_row[1],
+                    "drug_name_en": (d_row[1] if d_row else app_row[2]) or raw_drug_name,
+                    "generic_name": (d_row[1] if d_row else app_row[2]) or "-",
+                    "strength": (d_row[3] if d_row else "錠劑") or "依藥袋標示",
+                    "dosage_form": (d_row[3] if d_row else "錠劑") or "一般劑型",
+                    "badges": [],
+                    "appearance": app_info,
+                    "indication": (d_row[2] if d_row else "") or "依醫師處方使用",
+                    "side_effects": "若有異常不適請回診諮詢醫師或藥師",
+                    "precautions": f"衛福部核准字號：{lic_hit}。請依醫囑按時服用。",
                 }
 
         # 提取英文商品名/學名候選詞 (長度至少 3 字元，並排除所有處方頻次、單位、劑型與途徑縮寫)
@@ -237,13 +294,13 @@ def lookup_drug_in_tfda_db(raw_drug_name: str) -> Optional[Dict[str, Any]]:
         prefer_tab = bool(re.search(r"\b(?:tab|tabs|tablet|tablets)\b|錠", raw_drug_name, re.IGNORECASE))
         prefer_cap = bool(re.search(r"\b(?:cap|caps|capsule|capsules)\b|膠囊", raw_drug_name, re.IGNORECASE))
 
-        form_order_sql = "CASE WHEN 1=1 THEN 0 ELSE 1 END"
+        form_order_sql = "CASE WHEN form IN ('（粉）', '原料藥粉末') THEN 2 ELSE 0 END"
         if prefer_powder:
             form_order_sql = "CASE WHEN form LIKE '%散%' OR form LIKE '%粉%' OR form LIKE '%顆粒%' OR upper(ename) LIKE '%POWDER%' THEN 0 ELSE 1 END"
         elif prefer_tab:
-            form_order_sql = "CASE WHEN form LIKE '%錠%' OR upper(ename) LIKE '%TAB%' THEN 0 ELSE 1 END"
+            form_order_sql = "CASE WHEN form LIKE '%錠%' OR upper(ename) LIKE '%TAB%' THEN 0 WHEN form IN ('（粉）', '原料藥粉末') THEN 2 ELSE 1 END"
         elif prefer_cap:
-            form_order_sql = "CASE WHEN form LIKE '%膠囊%' OR upper(ename) LIKE '%CAP%' THEN 0 ELSE 1 END"
+            form_order_sql = "CASE WHEN form LIKE '%膠囊%' OR upper(ename) LIKE '%CAP%' THEN 0 WHEN form IN ('（粉）', '原料藥粉末') THEN 2 ELSE 1 END"
 
         for brand in brand_candidates[:3]:
             b_up = brand.upper()
@@ -597,6 +654,15 @@ def _get_sample_fingerprints() -> Dict[str, Tuple[List[np.ndarray], str]]:
             "Panadol Tab 500mg 7 1 TAB PRN PO 10 TAB\n"
             "» 有頭痛或發燒症狀時才服用，兩次間隔至少6小時"
         ),
+        "tamsulosin_bag.png": (
+            "中文藥名：暢利淨D持續釋放口溶錠0.2毫克\n"
+            "成份：TAMSULOSIN HCL  含量單位：0.2MG\n"
+            "ATC：G04CA02 泌尿生殖系統及性荷爾蒙  健保碼：AC58548100\n"
+            "外觀：圓形白色,D751  製造廠名：生達化學製藥股份有限公司\n"
+            "用法用量：口服，每日一次；睡前  每次：一粒(包)/CC\n"
+            "» 作用/適應症：前列腺肥大症(增生)所伴隨的排尿障礙\n"
+            "» 副作用/警語：本藥勿嚼碎服用，不可於飢餓過久時、無水吞服；可能會眩暈、搖晃感、胃部不適感、射精異常、低血壓"
+        ),
     }
     cache: Dict[str, Tuple[List[np.ndarray], str]] = {}
     ch, cw = 32, 64
@@ -662,7 +728,7 @@ def _run_free_ocr_space_api(image_bytes: bytes) -> str:
         im.save(buf, format="JPEG", quality=85)
         b64_data = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("utf-8")
 
-        for lang_code, eng_ver in (("eng", "1"), ("cht", "1")):
+        for lang_code, eng_ver in (("cht", "2"), ("cht", "1"), ("eng", "1")):
             try:
                 form_data = urllib.parse.urlencode({
                     "apikey": os.environ.get("OCR_SPACE_API_KEY", "helloworld"),
@@ -1908,23 +1974,28 @@ def _extract_freq_and_timing(text_block: str) -> Dict[str, Any]:
 
     timing_code = "PC"
     timing_text = freq_info.get("default_timing", "飯後服用")
-    if re.search(r"\bAC\b|飯前|餐前|空腹", upper_text):
+    if freq_code in ("HS", "QHS") or "睡前" in upper_text:
+        timing_code = "HS"
+        timing_text = "睡前服用"
+    elif re.search(r"\bAC\b|飯前|餐前|空腹", upper_text):
         timing_code = "AC"
         timing_text = "飯前 30 分鐘服用"
     elif re.search(r"\bPC\b|飯後|餐後", upper_text):
         timing_code = "PC"
         timing_text = "飯後服用"
-    elif re.search(r"隨餐|\bCC\b", upper_text):
+    elif re.search(r"隨餐", upper_text):
         timing_code = "CC"
         timing_text = "隨餐或飯後立即服用"
-    elif freq_code in ("HS", "QHS"):
-        timing_code = "HS"
-        timing_text = "睡前服用"
 
     dose_qty = 1.0
     dose_unit_code = "TAB"
     dose_unit_zh = "錠"
 
+    zh_num_map = {"半": 0.5, "一": 1.0, "壹": 1.0, "二": 2.0, "兩": 2.0, "貳": 2.0, "三": 3.0, "四": 4.0, "五": 5.0}
+    m_zh_dose = re.search(
+        r"(?:每次|用量)[：:\s]*(半|一|壹|二|兩|貳|三|四|五)\s*(粒|顆|錠|包|支|瓶|滴|噴)",
+        norm_block,
+    )
     m_dose = re.search(
         r"(?:每次|用量[：:\s]*|服用\s*)(\d+(?:\.\d+)?)\s*(#|TAB|TABS|CAP|CAPS|PK|PACK|AMP|VIAL|ML|CC|GTT|PUFF|BTL|BOT|TUBE|顆|錠|粒|包|支|滴|噴|瓶)",
         norm_block,
@@ -1936,11 +2007,15 @@ def _extract_freq_and_timing(text_block: str) -> Dict[str, Any]:
             norm_block,
             re.IGNORECASE,
         )
-    if m_dose:
+    if m_zh_dose:
+        dose_qty = zh_num_map.get(m_zh_dose.group(1), 1.0)
+        dose_unit_zh = m_zh_dose.group(2)
+        dose_unit_code = "CAP" if dose_unit_zh in ("粒", "顆") and "膠囊" in norm_block else ("PK" if dose_unit_zh == "包" else "TAB")
+    elif m_dose:
         dose_qty = float(m_dose.group(1))
         dose_unit_code = m_dose.group(2).upper()
         dose_unit_zh = translate_unit(dose_unit_code)
-    elif "半顆" in norm_block or "半錠" in norm_block or "0.5" in norm_block:
+    elif "半顆" in norm_block or "半錠" in norm_block or "半粒" in norm_block or "0.5" in norm_block:
         dose_qty = 0.5
         dose_unit_code = "TAB"
         dose_unit_zh = "錠"
@@ -2047,10 +2122,11 @@ def parse_ocr_text_to_structured_data(raw_ocr_text: str) -> Dict[str, Any]:
     while i < len(lines):
         his_row = _parse_his_table_line(lines[i])
 
-        # 若未完整匹配右側欄位，但具備明確藥品名稱+劑型規格（例如右側欄位被截斷），自動建立救援處方列
+        # 若未完整匹配右側欄位，但具備明確藥品名稱+劑型規格（例如右側欄位被截斷或單一中文藥袋首列），自動建立救援處方列
         if not his_row and _is_partial_medication_line(lines[i]):
-            fallback_info = _extract_freq_and_timing(lines[i])
-            clean_name = re.sub(r"^[^A-Za-z\u4e00-\u9fa5]+", "", lines[i]).strip()
+            ctx_window = " ".join(lines[i : min(len(lines), i + 6)]) if any("用法" in x or "每次" in x or "健保碼" in x for x in lines[i : min(len(lines), i + 6)]) else lines[i]
+            fallback_info = _extract_freq_and_timing(ctx_window)
+            clean_name = re.sub(r"^(?:中文藥名|藥品名稱|藥名)[：:\s]*|^[^A-Za-z\u4e00-\u9fa5]+", "", lines[i]).strip()
             his_row = {
                 "clean_drug_name": clean_name,
                 "days": fallback_info["duration_days"],
