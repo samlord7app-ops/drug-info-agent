@@ -183,6 +183,9 @@ new_js_functions = """    // 針對醫院 HIS 螢幕截圖的亮藍底反白列 
               }, 400);
               return;
             }
+            if (json.need_client_ocr) {
+              break;
+            }
           }
         } catch (backendErr) {
           console.info(`後端呼叫嘗試 #${attempt} 警告:`, backendErr);

@@ -120,6 +120,8 @@ def analyze_image():
             return jsonify({"ok": False, "error": "請先上傳或拍攝一張處方箋／藥袋照片，或輸入處方文字"}), 400
 
         result = analyze_image_locally_without_api(image_bytes, ocr_text_from_client=ocr_text)
+        if isinstance(result, dict) and result.get("_need_client_ocr"):
+            return jsonify({"ok": False, "need_client_ocr": True, "error": "切換至前端光學辨識通道"})
 
         # 為每筆藥品自動補上可直接供外部 APP 載入之 HTTPS 去留白特寫藥錠圖片網址 (proxied_image_url)
         host_base = request.host_url.rstrip("/")
@@ -146,11 +148,23 @@ def analyze_image():
 @app.route("/api/parse_ocr_text", methods=["POST"])
 def parse_ocr_text_api():
     """直接將多行 HIS 醫令處方文字或藥袋文字解析為完整結構化用藥時間表（免 API Key）"""
+    import urllib.parse
     body = request.get_json(silent=True) or {}
     raw_text = (body.get("text") or "").strip()
     if not raw_text:
         return jsonify({"ok": False, "error": "請輸入處方箋或藥袋文字"}), 400
     result = parse_ocr_text_to_structured_data(raw_text)
+    host_base = request.host_url.rstrip("/")
+    if request.headers.get("X-Forwarded-Proto", "").lower() == "https" and host_base.startswith("http://"):
+        host_base = "https://" + host_base[len("http://"):]
+    for med in result.get("medications", []):
+        app_info = med.get("appearance")
+        if isinstance(app_info, dict):
+            raw_url = (app_info.get("image_url") or "").strip()
+            if raw_url.startswith("https://mcp.fda.gov.tw/"):
+                app_info["proxied_image_url"] = f"{host_base}/api/pill_image?url={urllib.parse.quote(raw_url, safe='')}&v=2"
+            elif raw_url:
+                app_info["proxied_image_url"] = raw_url
     return jsonify({"ok": True, "data": result})
 
 

@@ -834,6 +834,9 @@
               }, 400);
               return;
             }
+            if (json.need_client_ocr) {
+              break;
+            }
           }
         } catch (backendErr) {
           console.info(`後端呼叫嘗試 #${attempt} 警告:`, backendErr);
