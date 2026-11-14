@@ -153,52 +153,73 @@ new_js_functions = """    // 針對醫院 HIS 螢幕截圖的亮藍底反白列 
       percentText.textContent = '45%';
       progressBar.style.width = '45%';
 
-      // 第一優先：直接呼叫本地後端 /api/analyze（內建 3 通道 Windows Native OCR + 座標水平列重組 + TFDA 72,000 筆藥典）
-      try {
-        const resp = await fetch(`${apiBase}/api/analyze`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            image_base64: currentImageBase64,
-            ocr_text: ''
-          })
-        });
-        const json = await resp.json();
-        if (json.ok && json.data) {
-          statusText.innerHTML = '<i class="fa-solid fa-check text-emerald-600 mr-1"></i>處方辨識與 HIS 8 欄驗算完成！';
-          percentText.textContent = '100%';
-          progressBar.style.width = '100%';
-          renderResult(json.data);
-          if (json.data.raw_ocr_text) {
-            document.getElementById('ocrRawTextarea').value = json.data.raw_ocr_text;
+      // 第一優先：直接呼叫後端 /api/analyze（支援 Windows Native OCR / Linux 雲端快速指紋與雲端 OCR + TFDA 72,000 筆藥典）
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 22000);
+          const resp = await fetch(`${apiBase}/api/analyze`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              image_base64: currentImageBase64,
+              ocr_text: ''
+            }),
+            signal: controller.signal
+          });
+          clearTimeout(timer);
+          if (resp.ok) {
+            const json = await resp.json();
+            if (json.ok && json.data) {
+              statusText.innerHTML = '<i class="fa-solid fa-check text-emerald-600 mr-1"></i>處方辨識與 HIS 8 欄驗算完成！';
+              percentText.textContent = '100%';
+              progressBar.style.width = '100%';
+              renderResult(json.data);
+              if (json.data.raw_ocr_text) {
+                document.getElementById('ocrRawTextarea').value = json.data.raw_ocr_text;
+              }
+              setTimeout(() => {
+                progressBox.classList.add('hidden');
+              }, 400);
+              return;
+            }
           }
-          setTimeout(() => {
-            progressBox.classList.add('hidden');
-          }, 500);
-          return;
+        } catch (backendErr) {
+          console.info(`後端呼叫嘗試 #${attempt} 警告:`, backendErr);
         }
-      } catch (backendErr) {
-        console.info('後端伺服器未啟動，切換為離線瀏覽器 OCR 模式:', backendErr);
+        if (attempt === 1 && window.location.protocol !== 'file:') {
+          statusText.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>雲端伺服器喚醒中，正在重新連線辨識...';
+          percentText.textContent = '65%';
+          progressBar.style.width = '65%';
+          await new Promise(r => setTimeout(r, 1500));
+        } else {
+          break;
+        }
       }
 
-      // 第二備援（當使用者直接以 file:// 雙擊開啟 HTML 且未啟動 Python 伺服器時）
+      // 第二備援（當使用者直接以 file:// 雙擊開啟 HTML 且未啟動 Python 伺服器時，附 10 秒防卡死逾時保護）
+      statusText.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>正在啟動瀏覽器離線 OCR 備援引擎...';
+      percentText.textContent = '70%';
+      progressBar.style.width = '70%';
       const enhancedDataUrl = await preprocessHisCanvasForOcr(currentImageBase64);
       let extractedText = '';
       try {
         if (window.Tesseract) {
-          const result = await Tesseract.recognize(
+          const ocrPromise = Tesseract.recognize(
             enhancedDataUrl,
-            'chi_tra+eng',
+            'eng',
             {
               logger: m => {
                 if (m.status === 'recognizing text' && typeof m.progress === 'number') {
-                  const pct = Math.max(20, Math.round(m.progress * 100));
+                  const pct = Math.max(70, Math.round(70 + m.progress * 28));
                   percentText.textContent = pct + '%';
                   progressBar.style.width = pct + '%';
                 }
               }
             }
           );
+          const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 10000));
+          const result = await Promise.race([ocrPromise, timeoutPromise]);
           extractedText = (result && result.data && result.data.text) ? result.data.text.trim() : '';
         }
       } catch (ocrErr) {
