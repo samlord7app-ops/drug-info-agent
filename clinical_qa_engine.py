@@ -156,6 +156,39 @@ IV_COMPATIBILITY_KNOWLEDGE = {
             '2. **肌肉注射液使用時限（1 小時）**：\n'
             '   * 調配好的肌肉注射溶液必須在調配後的 **1 小時內** 使用完畢。'
         )
+    },
+    'metalyse': {
+        'name': '栓體溶 (Metalyse / Tenecteplase 注射劑)',
+        'type': 'iv_bolus',
+        'diluent': (
+            '1. **專用溶劑與溶解規範（嚴格要求）**：\n'
+            '   * 必須以包裝內隨附之**無菌注射用水 (Water for Injection, WFI) 預填針筒**溶解 Metalyse 凍晶粉末。\n'
+            '   * **操作方式**：將注射用水全量沿小瓶瓶壁緩慢注入，**輕柔旋轉瓶身 (Gentle swirl) 直至完全溶解**；⚠️ **嚴禁劇烈搖晃 (DO NOT SHAKE)**，劇烈晃動會使重組組織纖溶酶原活化劑蛋白質變性起泡失去活性！\n'
+            '2. **溶解後外觀要求**：\n'
+            '   * 調配後溶液應為澄清、無色至淡黃色，若有肉眼可見懸浮顆粒、混濁或變色，嚴禁使用。'
+        ),
+        'incompatibility': (
+            '1. 🚫 **葡萄糖點滴液絕對配伍禁忌（重大化學不相容）**：\n'
+            '   * **官方仿單嚴格明載：METALYSE 與葡萄糖溶液（如 5% 葡萄糖注射液 D5W）不相容 (Incompatible with dextrose)！** 若與葡萄糖溶液接觸會產生不可見或肉眼可見之沉澱變質！\n'
+            '2. 🚫 **管路混合禁令**：\n'
+            '   * 嚴禁將其他任何藥物加入含有 METALYSE 的注射針筒中，亦不可與其他針劑共用同一管路輸注。\n'
+            '3. ⚠️ **沖管重要規範（給藥前後沖管）**：\n'
+            '   * 若必須使用既有的靜脈導管，且該管路曾輸注過含葡萄糖之溶液，在施打 METALYSE **之前與之後，必須以 0.9% 氯化鈉注射液 (0.9% Normal Saline, 生理食鹽水) 徹底沖洗管線**！'
+        ),
+        'filter_tubing': (
+            '1. **給藥途徑與極速給藥時間（單次靜脈推注）**：\n'
+            '   * 本藥品為**單次快速靜脈推注 (Single IV bolus)**，必須於 **5 至 10 秒內快速推注完畢**！\n'
+            '2. ⚠️ **絕非長時間點滴滴注 (NOT for continuous infusion)**：\n'
+            '   * 本藥為急性心肌梗塞搶救藥物，嚴禁用點滴吊掛慢慢滴，亦不需使用點滴過濾器。\n'
+            '3. **給藥後管路處理**：\n'
+            '   * 推注完畢後，應以生理食鹽水沖管以確保全量藥液完全進入血液循環。'
+        ),
+        'stability': (
+            '1. **調配後儲存時限**：\n'
+            '   * 溶解後之溶液在 **2°C 至 8°C 冷藏條件下可保存 24 小時**，或在 **30°C 以下室溫保存 8 小時**。\n'
+            '2. **臨床使用原則**：\n'
+            '   * 因本品不含抑菌防腐劑，調配後應立即使用；單次使用後剩餘之未用完藥液必須全數丟棄。'
+        )
     }
 }
 IV_COMPATIBILITY_KNOWLEDGE['keytruda'] = IV_COMPATIBILITY_KNOWLEDGE['pembrolizumab']
@@ -173,6 +206,9 @@ IV_COMPATIBILITY_KNOWLEDGE['纈草酸'] = IV_COMPATIBILITY_KNOWLEDGE['depakine']
 IV_COMPATIBILITY_KNOWLEDGE['invanz'] = IV_COMPATIBILITY_KNOWLEDGE['invanz']
 IV_COMPATIBILITY_KNOWLEDGE['ertapenem'] = IV_COMPATIBILITY_KNOWLEDGE['invanz']
 IV_COMPATIBILITY_KNOWLEDGE['益滿治'] = IV_COMPATIBILITY_KNOWLEDGE['invanz']
+IV_COMPATIBILITY_KNOWLEDGE['metalyse'] = IV_COMPATIBILITY_KNOWLEDGE['metalyse']
+IV_COMPATIBILITY_KNOWLEDGE['tenecteplase'] = IV_COMPATIBILITY_KNOWLEDGE['metalyse']
+IV_COMPATIBILITY_KNOWLEDGE['栓體溶'] = IV_COMPATIBILITY_KNOWLEDGE['metalyse']
 
 
 
@@ -675,6 +711,42 @@ def extract_relevant_clinical_lines(text: str, keywords: list, max_lines: int = 
     return matched
 
 
+def extract_pediatric_clinical_lines(text: str, max_lines: int = 4) -> tuple:
+    """
+    智能萃取小兒用藥條文，嚴格防止將成人體重劑量或老年歲數誤判為小兒指引
+    回傳: (matched_lines: list, is_not_established: bool, explicit_approved: bool)
+    """
+    cleaned = clean_clinical_html(text)
+    matched = []
+    seen = set()
+    is_not_est = False
+    is_appr = False
+
+    child_kws = ['小兒', '兒童', '青少年', '嬰兒', '幼兒', '新生兒', '未滿18歲', '18歲以下', '12歲以下', '兒科', 'pediatric', 'children', 'adolescent', 'infant']
+    neg_kws = ['尚未確立', '尚未建立', '無可用數據', '無可用資料', '無相關數據', '不建議使用', '不建議用於', '未經確立', '安全性及有效性尚未', '缺乏臨床試驗', '安全性與有效性尚未', '無安全性及療效資料']
+
+    for line in cleaned.split('\n'):
+        l = line.strip()
+        if len(l) < 8:
+            continue
+        # 必須包含明確兒童實體詞，絕不因單純出現 'kg' 或 '體重' 或 '75歲' 就誤抓成人體重劑量
+        if not any(ck in l for ck in child_kws):
+            continue
+
+        if any(neg in l for neg in neg_kws):
+            is_not_est = True
+        if any(w in l for w in ['核准用於', '建議劑量為', '口服懸液', 'mg/kg', '每日劑量為']):
+            is_appr = True
+
+        if l not in seen:
+            seen.add(l)
+            matched.append(l)
+        if len(matched) >= max_lines:
+            break
+
+    return matched, is_not_est, is_appr
+
+
 def generate_patient_answer(matched_intent: str, drug_info: dict, q_id=None, pro_answer: str = "") -> str:
     """
     全新動態研讀 AI 引擎：
@@ -726,6 +798,7 @@ def generate_patient_answer(matched_intent: str, drug_info: dict, q_id=None, pro
     is_sglt2 = any(k in s for k in ['dapagliflozin', 'forxiga', '福適佳', 'empagliflozin', 'jardiance', '恩排糖', 'sglt2', 'sglt-2'])
     is_statin = any(k in s for k in ['atorvastatin', 'lipitor', '立普妥', 'rosuvastatin', 'crestor', '冠脂妥', 'statin'])
     is_aspirin = any(k in s for k in ['bokey', 'aspirin', '伯基', '阿斯匹靈'])
+    is_metalyse = any(k in s for k in ['metalyse', 'tenecteplase', '栓體溶', '000714', '001317'])
 
     # =========================================================================
     # 01 藥品作用 (indications)
@@ -921,14 +994,14 @@ def generate_patient_answer(matched_intent: str, drug_info: dict, q_id=None, pro
     if matched_intent == 'pediatric_use':
         ans = f"### 💡 【結論速覽（{cname} 小朋友/兒童可以使用嗎？幾歲可以用？）】\n"
         ped_corpus = f"{dosage_clean}\n{special_clean}\n{precautions_clean}\n{indications_clean}"
-        ped_lines = extract_relevant_clinical_lines(
-            ped_corpus, 
-            ['小兒', '兒童', '青少年', '嬰兒', '歲', 'kg', '體重'], 
-            max_lines=3, 
-            min_len=8
-        )
+        ped_lines, is_not_est, is_appr = extract_pediatric_clinical_lines(ped_corpus, max_lines=3)
 
-        if is_metformin:
+        if is_metalyse:
+            ans += f"🚫 **【官方仿單明定：METALYSE 在 18 歲以下兒童族群之安全性與有效性尚未確立，不建議使用】**：\n"
+            ans += f"* **適應症與族群限制**：本藥品衛福部核准用於「成人急性心肌梗塞 (STEMI) 與成人急性缺血性中風 (AIS)」。小兒罹患此類動脈粥狀硬化血栓阻塞極為罕見，臨床試驗並無兒童族群之確效劑量數據。\n"
+            ans += f"* ⚠️ **重大出血致命風險**：本藥為強力組織纖溶酶原活化劑（血栓溶解劑），具有嚴重致命性顱內出血與全身大出血風險；**官方仿單明確載明：目前不建議使用於 18 歲以下兒童及青少年**！\n"
+            ans += f"* **兒科急重症例外**：若極罕見情況下小兒加護病房專科團隊經審慎評估需專案使用，必須由小兒心臟專科醫師依病童狀況於具備連續監測之加護病房施打。\n\n"
+        elif is_metformin:
             ans += f"👶 **【官方仿單核准兒童使用年齡規範】**：\n"
             ans += f"* **核准年齡**：衛福部核准 Metformin 可用於 **10 歲（或特定劑型 12 歲）及以上** 之兒童與青少年第二型糖尿病患者。\n"
             ans += f"* **小兒建議劑量**：通常起始劑量為每日一次 500mg 或 850mg，於用餐時或餐後服用；視血糖控制逐步調整，每日最大劑量通常不超過 2000mg（分 2 至 3 次給藥）。\n"
@@ -938,21 +1011,68 @@ def generate_patient_answer(matched_intent: str, drug_info: dict, q_id=None, pro
             ans += f"* 3 個月至 12 歲兒童建議劑量為每次 15 mg/kg（每日兩次，單日最高上限 1 公克）；小於 3 個月大嬰兒安全性尚未確立。\n\n"
         elif is_keytruda:
             ans += f"👶 **【黑色素瘤核准用於 12 歲以上兒童（每 3 週 2 mg/kg，單次最高 200 mg）；其餘癌症小兒安全性尚未確立】**。\n\n"
-        elif ped_lines:
+        elif is_glp1 or is_sglt2:
+            ans += f"🚫 **【官方仿單明定：18 歲以下兒童及青少年之安全性與有效性尚未建立，不建議使用】**：\n"
+            ans += f"* 目前尚無針對 18 歲以下小兒之確效臨床劑量數據，未經小兒新陳代謝專科醫師評估，切勿擅自給予兒童使用。\n\n"
+        elif is_not_est:
+            ans += f"🚫 **【官方仿單載明：在 18 歲以下兒童或青少年的安全性與有效性尚未建立】**：\n"
+            if ped_lines:
+                for pl in ped_lines:
+                    ans += f"* 📋 {pl}\n"
+            else:
+                ans += f"* 官方仿單通常僅核准於成人；未經小兒專科醫師評估前，切勿擅自給予 18 歲以下兒童使用。\n"
+            ans += "\n"
+        elif ped_lines and is_appr:
             ans += f"👶 **【衛福部核定仿單小兒年齡與劑量指引摘錄】**：\n"
+            for pl in ped_lines:
+                ans += f"* 📋 {pl}\n"
+            ans += "\n"
+        elif ped_lines:
+            ans += f"👶 **【衛福部核定仿單兒童注意事項摘錄】**：\n"
             for pl in ped_lines:
                 ans += f"* 📋 {pl}\n"
             ans += "\n"
         else:
             ans += f"⚠️ **【官方核定仿單載明：在 18 歲以下兒童或青少年的安全性與有效性尚未建立】**：\n"
-            ans += f"* 官方仿單通常僅核准於成人；未經小兒專科醫師評估前，切勿擅自給予 18 歲以下兒童使用。\n\n"
+            ans += f"* 官方仿單僅核准於成人；未經小兒專科醫師評估前，切勿擅自給予 18 歲以下兒童使用。\n\n"
 
-        ans += f"### 📋 【家長用藥三大禁忌】\n"
-        ans += f"1. **小孩不是大人縮小版**：嚴禁將大人的藥丸自己切半、折碎或自行稀釋給小朋友吃！大人劑型與賦形劑對小孩可能產生嚴重毒性。\n"
-        ans += f"2. **仔細核對藥袋劑量**：兒童藥物多依體重 (kg) 精密換算，給藥時務必看清藥袋上的毫升數 (mL) 或包數。\n"
-        ans += f"3. **切勿自行補給**：若小孩吃藥後吐出，不可直接立刻再灌一次完整劑量，請先諮詢兒科醫師或藥師。\n\n"
-        ans += f"### 🚨 【兒童緊急送醫警訊】\n"
-        ans += f"* 小孩用藥後若出現**全身大面積紅疹蕁麻疹、呼吸喘鳴喘不過氣、異常昏睡叫不醒或持續劇烈嘔吐**，請立刻送醫急診！"
+        # 依劑型與藥品性質智慧分流照護指引，杜絕不合邏輯之罐頭
+        is_subq_pen = is_glp1 or any(kw in f"{cname} {ename} {dosage_form}".lower() for kw in ['筆', 'pen', 'kwikpen', '預填', '隨選'])
+        if is_subq_pen:
+            ans += f"### 📋 【家長用藥安全重要警告（皮下注射筆）】\n"
+            ans += f"1. **未核准用於兒童體重控制或糖尿病**：本藥品為每週一次皮下注射筆，未經衛福部核准於 18 歲以下兒童族群，其對發育期骨骼、甲狀腺及代謝機能之長期安全性尚未確立。\n"
+            ans += f"2. **切勿將成人注射筆給小孩施打**：成人專用之高劑量預填注射筆不可任意給幼童或青少年施打，以防引發急性胃腸衰竭或嚴重脫水低血糖。\n"
+            ans += f"3. **妥善冷藏保管防範誤觸**：注射筆應冷藏於 2°C~8°C 冰箱中且放置於幼童無法觸及之處，防範孩童當作玩具按壓誤扎！\n\n"
+            ans += f"### 🚨 【兒童緊急送醫警訊】\n"
+            ans += f"* 若孩童不慎誤扎注射筆或自行注射，請立即攜帶注射筆外盒前往醫院急診評估！"
+        elif is_injection:
+            ans += f"### 📋 【兒童急重症用藥重要原則（專用針劑）】\n"
+            ans += f"1. **本藥品為醫院專用針劑**：絕非居家常備藥品，亦無口服劑型；施打必須在具備連續生命徵象與急救監測設備之醫療院所由專科醫師執行。\n"
+            ans += f"2. **嚴密監測重大不良反應**：若兒科專案在加護病房使用，醫護團隊必須持續嚴密監控生命徵象與藥物重大毒性（如出血、血壓下降、休克、嚴重過敏）。\n"
+            ans += f"3. **切勿套用成人口服觀念**：針劑劑量需經小兒專科醫師依體重或體表面積嚴謹換算，絕不可擅自推論。\n\n"
+            ans += f"### 🚨 【兒童緊急就醫警訊】\n"
+            ans += f"* 施打或治療期間若出現異常皮膚紫斑滲血、意識改變、呼吸喘鳴或抽搐，請醫護團隊立即啟動急救處置。"
+        elif is_oral:
+            if is_not_est or (not is_appr and not is_metformin):
+                ans += f"### 📋 【家長用藥安全重要警告】\n"
+                ans += f"1. **大人處方切勿給小孩**：大人常規用藥之成分強度與賦形劑未經小兒耐受性驗證，切勿自行將大人的藥丸切半、折碎給小朋友吃！\n"
+                ans += f"2. **兒科症狀請看小兒科**：小孩若有生病症狀，請帶至小兒科就診，由兒科醫師開立適合兒童生理機能與體重的專屬兒科處方。\n"
+                ans += f"3. **妥善保管避免誤食**：請將藥品放置於孩童拿不到的高處或上鎖藥箱中。\n\n"
+                ans += f"### 🚨 【兒童緊急送醫警訊】\n"
+                ans += f"* 若孩童不慎誤吞大人藥物，請立即攜帶藥袋包裝前往醫院急診就醫！"
+            else:
+                ans += f"### 📋 【家長餵藥精準三步驟】\n"
+                ans += f"1. **精密核對體重劑量**：兒童藥物多依體重 (kg) 精密換算，給藥時務必看清藥袋上的毫升數 (mL) 或劑量。\n"
+                ans += f"2. **使用專用給藥量具**：請使用刻度清楚之專用量筒或餵藥滴管，切勿使用一般家庭湯匙。\n"
+                ans += f"3. **吐藥處理指引**：若小孩服藥後立即全部吐出，切勿立刻再灌一次完整劑量，請先諮詢兒科醫師或藥師評估補服原則。\n\n"
+                ans += f"### 🚨 【兒童緊急送醫警訊】\n"
+                ans += f"* 小孩用藥後若出現全身大面積紅疹蕁麻疹、呼吸喘鳴喘不過氣、異常昏睡叫不醒或持續劇烈嘔吐，請立刻送醫急診！"
+        else:
+            ans += f"### 📋 【外用與特殊劑型兒童守則】\n"
+            ans += f"1. **遵照專科醫師處方**：請依醫師指示部位薄薄塗抹或使用，切勿過量。\n"
+            ans += f"2. **防範誤觸眼口**：使用後請為幼童洗手或戴上小手套，防範藥物揉入眼睛或誤入口中。\n\n"
+            ans += f"### 🚨 【何時應就醫】\n"
+            ans += f"* 若使用後局部皮膚嚴重紅腫、起水泡或發癢加劇，請停用並回診。"
         return ans
 
     # =========================================================================
@@ -1029,16 +1149,7 @@ def generate_patient_answer(matched_intent: str, drug_info: dict, q_id=None, pro
     # 08 IV相容性與稀釋配伍禁忌為何？ (iv_compatibility)
     # =========================================================================
     if matched_intent == 'iv_compatibility':
-        if is_invanz:
-            ans = f"### 💡 【結論速覽（INVANZ 益滿治靜脈調配與配伍重大禁忌）】\n"
-            ans += f"🚫 **【首要重大禁忌：絕對不可以使用含有葡萄糖 (α-D-GLUCOSE) 的稀釋液！】**\n"
-            ans += f"* 官方仿單嚴格明定：不可使用含葡萄糖稀釋液（會破壞藥效降解）！亦不可與其他藥物混合或同時輸注。\n"
-            ans += f"* **成人調製規範**：1g 小瓶加入 10 mL 注射用水或 0.9% NaCl 溶解，立刻移入 50 mL 0.9% 氯化鈉注射液，輸注時間必須超過 30 分鐘，調配後 6 小時內用完。\n\n"
-        elif is_keytruda:
-            ans = f"### 💡 【結論速覽（吉舒達靜脈調配與點滴相容重點）】\n"
-            ans += f"* **相容點滴液**：0.9% 氯化鈉注射液 (NS) 或 5% 葡萄糖注射液 (D5W)；稀釋濃度 1~10 mg/mL。\n"
-            ans += f"* 🚫 **配伍禁忌**：切勿透過同一輸注管線同時投予其他藥物！輸注管線必須連接 0.2~5 微米在線濾膜；輸注時間約 30 分鐘。\n\n"
-        elif is_oral:
+        if is_oral:
             ans = f"### 💡 【結論速覽（這是口服藥，絕對不能打點滴！）】\n"
             ans += f"⚠️ **【本藥品為口服劑型（{dosage_form}），完全不適用於靜脈打點滴】**：\n"
             ans += f"* 本藥品經衛生福利部核准為**口服使用**，在醫學上**沒有打點滴稀釋相容性之資料**。\n"
@@ -1046,15 +1157,72 @@ def generate_patient_answer(matched_intent: str, drug_info: dict, q_id=None, pro
             ans += f"### 📋 【病患用藥守則】\n"
             ans += f"* 請整顆配合溫開水吞服即可，切勿自行改變給藥途徑。"
             return ans
-        else:
-            ans = f"### 💡 【結論速覽（針劑注射點滴調配重點）】\n"
-            ans += f"* **醫院專業調配**：本藥品為專用針劑，必須由專業藥師與護理師在無菌環境下以官方指定相容點滴液（如 0.9% 生理食鹽水等）精準調製。\n"
-            ans += f"* 施打時切勿與其他未經確認相容性之針劑混合輸注。\n\n"
 
-        ans += f"### 📋 【病人在醫院打點滴該注意的事】\n"
-        ans += f"1. **注意點滴外觀**：輸注時管路若出現混濁、白色沉澱或變色，請立刻按鈴告知護理師。\n"
-        ans += f"2. **切勿自己調滴速**：嚴禁自行旋轉點滴滾輪加速。\n"
-        ans += f"3. **注意注射部位**：若打針處紅腫熱痛、滲液漏針，請立即反映。"
+        # 1. 比對針劑專屬臨床知識庫 (Metalyse, Keytruda, Invanz, Furosemide, Paclitaxel, Depakine)
+        matched_iv_key = None
+        for k in IV_COMPATIBILITY_KNOWLEDGE:
+            if k in drug_name_str:
+                matched_iv_key = k
+                break
+
+        if matched_iv_key:
+            info = IV_COMPATIBILITY_KNOWLEDGE[matched_iv_key]
+            ans = f"### 💡 【結論速覽（{info['name']} 靜脈調配與相容性重點）】\n"
+            ans += f"🧪 **【臨床靜脈調配與相容性技術規格】**：\n\n"
+            ans += f"💧 **【相容點滴稀釋液與專用溶劑】**：\n{info['diluent']}\n\n"
+            ans += f"🚫 **【配伍禁忌與沖管規範】**：\n{info['incompatibility']}\n\n"
+            ans += f"⏱️ **【給藥方式、速度與管路要求】**：\n{info['filter_tubing']}\n\n"
+            ans += f"🧊 **【調配後安定性與儲存時限】**：\n{info['stability']}\n\n"
+
+            if info.get('type') == 'iv_bolus':
+                ans += f"### 📋 【病患與家屬在施打時該注意的事（靜脈快速推注）】\n"
+                ans += f"1. **快速推注時之感受**：本藥品為 5 至 10 秒內快速推入靜脈管路，推注時若注射處有劇烈灼痛、刺痛或腫脹漏針，請立即告知醫師。\n"
+                ans += f"2. **密切監測急性反應**：推注後醫護團隊會連續監測心電圖、血壓與心律，若自覺胸口劇烈壓迫、呼吸喘鳴或頭暈冒冷汗，請即刻反映。\n"
+                ans += f"3. **出血紅旗警訊觀察**：本藥為強力血栓溶解劑，施打後 24~48 小時內若有注射針孔滲血不止、牙齦出血、血尿、咳血或劇烈頭痛，請立刻通報醫療人員！\n\n"
+                ans += f"### 🚨 【重大安全警告】\n"
+                ans += f"* 施打後請嚴格平躺臥床休息，切勿自行下床走動以防跌倒或急性大出血危險！"
+            else:
+                ans += f"### 📋 【病人在醫院打點滴該注意的事（靜脈點滴輸注）】\n"
+                ans += f"1. **注意點滴外觀**：輸注時管路若出現混濁、白色沉澱或變色，請立刻按鈴告知護理師。\n"
+                ans += f"2. **保持滴速穩定**：靜脈點滴由醫護人員以輸液幫浦 (Pump) 精準調控，切勿自行更動。\n"
+                ans += f"3. **注意注射部位**：若打針處紅腫熱痛、滲液漏針，請立即反映。\n\n"
+                ans += f"### 🚨 【何時應立刻反映】\n"
+                ans += f"* 輸注期間若感到呼吸不順、全身發冷顫抖、起紅疹發癢或心跳加速，請立即按鈴通知醫護人員。"
+            return ans
+
+        # 2. 若不在固定知識庫，動態檢索仿單內文中的調配與相容條文
+        search_corpus = f"{dosage_clean}\n{precautions_clean}\n{contra_clean}\n{warnings_clean}"
+        lines = [l.strip() for l in search_corpus.split('\n') if len(l.strip()) >= 8]
+        iv_match_lines = [
+            l for l in lines 
+            if any(k in l for k in ['相容', '稀釋', '配伍', '點滴', '生理食鹽水', '葡萄糖', '氯化鈉', '注射用水', '輸注時間', '推注', '靜脈注射'])
+            and not any(x in l for x in ['口服', '錠劑', '膠囊'])
+        ]
+
+        ans = f"### 💡 【結論速覽（{cname} 靜脈注射調配重點）】\n"
+        if iv_match_lines:
+            ans += f"🧪 **【衛福部核定仿單靜脈調配指引摘錄】**：\n"
+            for ml in iv_match_lines[:4]:
+                ans += f"* 📋 {ml}\n"
+            ans += "\n"
+        else:
+            ans += f"⚠️ **【官方核定仿單未記載特定之點滴稀釋相容性或 Y-Site 配伍數據】**：\n"
+            ans += f"* 經檢索官方仿單全文，未特別列出固定點滴相容性清單。本藥品為專用針劑，調配與稀釋須由醫療院所藥局無菌調製；未經相容性驗證前，嚴禁與其他針劑混合輸注。\n\n"
+
+        # 判斷是推注還是輸注
+        is_bolus = any(k in f"{cname} {ename} {dosage_clean}".lower() for k in ['推注', 'bolus', 'push'])
+        if is_bolus:
+            ans += f"### 📋 【病患接受靜脈推注時該注意的事】\n"
+            ans += f"1. **推注時異常疼痛**：推藥時若施打部位感到異常刺痛或腫脹，可能為藥物外滲漏針，請立即告知醫護人員。\n"
+            ans += f"2. **急性反應觀察**：推注後若感到胸悶、心悸、頭暈或呼吸不順，請立即反映。\n"
+        else:
+            ans += f"### 📋 【病人在醫院打點滴該注意的事】\n"
+            ans += f"1. **注意點滴外觀**：輸注時管路若出現混濁、白色沉澱或變色，請立刻按鈴告知護理師。\n"
+            ans += f"2. **保持滴速穩定**：由醫護人員與精密輸液設備控制，切勿自行旋轉滾輪調整滴速。\n"
+            ans += f"3. **注意注射部位**：若打針處紅腫熱痛、滲液漏針，請立即反映。\n"
+
+        ans += f"\n### 🚨 【何時應立刻反映】\n"
+        ans += f"* 輸液期間若出現呼吸急促、畏寒發抖、全身發癢起疹或胸口不適，請立即告知護理師！"
         return ans
 
     # =========================================================================
@@ -1928,6 +2096,12 @@ def _smart_clinical_qa_core(question: str, drug_info: dict, q_id=None) -> str:
                 ans += f"> 生理食鹽水(normal saline，0.9g for 100ml)、葡萄糖點滴液(dextrose，5g for 100ml)、葡萄糖點滴液(dextrose，10g for 100ml)、葡萄糖點滴液(dextrose，20g for 100ml)、葡萄糖點滴液(dextrose，30g for 100ml)、葡萄糖生理食鹽水(dextrose，2.5g+NaCl，0.45g for 100ml)、重碳酸鈉(sodium bicarbonate，0.14g for 100ml)、trometamol (THAM)，3.66g+NaCl，0.172g for 100ml。\n"
                 ans += f"> 400mg的本品注射劑溶於500ml的上述點滴液中使用(trometamol例外：250ml)。\n"
                 ans += f"> 此靜脈點滴液適用於PVC、polythene或玻璃容器三種材質。\n\n"
+            elif any(k in matched_drug_key for k in ['metalyse', 'tenecteplase', '栓體溶']):
+                ans += f"* **依據官方仿單【第 3 節 用法用量 / 3.2 調製方式與靜脈推注指引】核定條文記載**：\n"
+                ans += f"> METALYSE 必須以包裝內隨附之注射用水 (WFI) 溶解，沿壁緩慢注入小瓶並輕柔旋轉混勻，切勿劇烈搖晃起泡。\n"
+                ans += f"> 官方仿單嚴格明定：METALYSE 與葡萄糖溶液（如 5% Dextrose）不相容。不可將其他藥物加入注射液或同一輸液管路中。\n"
+                ans += f"> 所需劑量必須以單次快速靜脈推注 (Bolus) 方式給予，給藥時間約 5~10 秒。\n"
+                ans += f"> 若必須共用先前輸注過葡萄糖之管路，給藥前後應以 0.9% 氯化鈉注射液徹底沖洗管線。\n\n"
             elif any(k in matched_drug_key for k in ['invanz', 'ertapenem', '益滿治']):
                 ans += f"* **依據官方仿單【第 3 節 用法用量 / 3.2 調製方式】核定條文記載**：\n"
                 ans += f"> **13歲以上的病人 靜脈投與時的準備步驟:**\n"
@@ -2359,10 +2533,18 @@ def _smart_clinical_qa_core(question: str, drug_info: dict, q_id=None) -> str:
         is_sglt2 = any(k in s for k in ['dapagliflozin', 'forxiga', '福適佳', 'empagliflozin', 'jardiance'])
         is_sitagliptin = any(k in s for k in ['sitagliptin', 'januvia', '佳糖維'])
         is_depakine = any(k in s for k in ['depakine', '帝拔癲', 'valproate'])
+        is_metalyse = any(k in s for k in ['metalyse', 'tenecteplase', '栓體溶'])
 
         ans += f"### 💡 【核心白話解答（官方仿單查核結果）】\n"
 
-        if is_sglt2 or is_sitagliptin:
+        if is_metalyse:
+            ans += f"🚫 **【官方仿單明定：METALYSE 在 18 歲以下兒童族群之安全性與有效性尚未確立，不建議使用】**：\n"
+            ans += f"1. **官方核定年齡限制**：衛福部核准適應症為成人急性心肌梗塞 (STEMI) 與成人急性缺血性中風 (AIS)。仿單【特殊族群之使用 / 6.4 兒童族群】明確標記：**「METALYSE 在 18 歲以下兒童及青少年病人之安全性與有效性尚未確立，目前無可用數據，不建議使用於兒童族群」**。\n"
+            ans += f"2. **重大臨床安全考量**：動脈血栓阻塞在兒科極為罕見；本品為強效組織纖溶酶原活化劑，具有嚴重致命性顱內出血與全身大出血風險，未經兒童心血管重症專科團隊專案審慎評估，嚴禁使用。\n\n"
+            ans += f"### 📋 【官方仿單核定依據與章節條文】\n"
+            ans += f"* **依據官方仿單【第 6 節 特殊族群之使用 / 6.4 兒童族群】記載**：\n"
+            ans += f"> 尚未確立 METALYSE 在 18 歲以下兒童及青少年病人的安全性與有效性。無可用數據。不建議使用於兒童族群。\n\n"
+        elif is_sglt2 or is_sitagliptin:
             ans += f"👶 **【官方仿單明定：18 歲以下兒童安全性尚未確立】**：\n"
             ans += f"1. **年齡限制**：官方核定仿單明訂**「本藥品在 18 歲以下兒童及青少年病人之安全性與有效性尚未確立」**。\n"
             ans += f"2. **劑量指引**：目前沒有可用於小兒族群之確效劑量數據，因此**不建議用於 18 歲以下之兒童或青少年**！\n\n"
