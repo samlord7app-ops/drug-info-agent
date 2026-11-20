@@ -719,6 +719,20 @@
             executeSearch(document.getElementById('drugInput').value);
         });
 
+        // 自動讀取 URL 參數帶入藥品名稱並觸發查詢 (例如：?q=藥名、?drug=藥名、?query=藥名)
+        window.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const q = urlParams.get('q') || urlParams.get('drug') || urlParams.get('query') || urlParams.get('keyword');
+            if (q && q.trim()) {
+                const cleanQ = q.trim();
+                const input = document.getElementById('drugInput');
+                if (input) input.value = cleanQ;
+                setTimeout(() => {
+                    executeSearch(cleanQ);
+                }, 150);
+            }
+        });
+
         function quickSearch(drugName) {
             document.getElementById('drugInput').value = drugName;
             executeSearch(drugName);
