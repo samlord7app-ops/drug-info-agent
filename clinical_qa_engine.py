@@ -674,23 +674,74 @@ def detect_drug_administration_route(drug_info: dict) -> dict:
 
 
 def clean_clinical_html(raw_html: str) -> str:
-    """清理仿單 HTML 標籤、實體符號與空白，轉換為純淨文字"""
+    """清理仿單 HTML 標籤、實體符號與空白，轉換為純淨文字並自動修復跨標籤被切斷之完整句子"""
     if not raw_html:
         return ""
     import html as html_lib
-    text = html_lib.unescape(raw_html)
+    text = raw_html
+    # 先剔除 script, style, button, header, footer 等非仿單內容之網頁元件標籤
+    text = re.sub(r'<script[\s\S]*?</script>', ' ', text, flags=re.I)
+    text = re.sub(r'<style[\s\S]*?</style>', ' ', text, flags=re.I)
+    text = re.sub(r'<button[\s\S]*?</button>', ' ', text, flags=re.I)
+    text = re.sub(r'<header[\s\S]*?</header>', ' ', text, flags=re.I)
+    text = re.sub(r'<footer[\s\S]*?</footer>', ' ', text, flags=re.I)
+    text = re.sub(r'<nav[\s\S]*?</nav>', ' ', text, flags=re.I)
+    text = re.sub(r'<!--[\s\S]*?-->', ' ', text)
+    text = html_lib.unescape(text)
+    # 將常見區塊標籤轉為換行，其餘行內標籤轉為空白
+    text = re.sub(r'</?(?:p|div|br|tr|li|h[1-6]|table|blockquote)[^>]*>', '\n', text, flags=re.I)
     text = re.sub(r'<[^>]+>', ' ', text)
     text = re.sub(r'&nbsp;', ' ', text)
     text = re.sub(r'&[a-zA-Z]+;', ' ', text)
     lines = [re.sub(r'\s+', ' ', l).strip() for l in text.split('\n')]
     valid = []
+    boilerplate_bad_words = ('function', 'loginpopup', '播放驗證碼', '忘記密碼', '會員註冊', 'verificationcode', 'document.getelementbyid', '重新產生')
     for l in lines:
         if not l or l.startswith('<!--') or 'toggle' in l or 'inner' in l:
+            continue
+        if any(bw in l.lower() for bw in boilerplate_bad_words):
             continue
         if len(l) <= 2 and not any(c.isdigit() for c in l):
             continue
         valid.append(l)
-    return '\n'.join(valid)
+
+    # 智能合併被跨標籤或 Word-to-HTML 軟換行切斷的殘缺句子
+    merged = []
+    i = 0
+    end_punc = ('。', '！', '？', '；', ';', ':', '：', '）', ')', '】', ']')
+    dep_starts = ('的', '及', '和', '與', '或', '等', '時', '以', '其', '但', '之', '而', '於', '至', '請', '應', '為', '並', '可')
+    cont_ends = ('，', '、', ',', '與', '及', '或', '的', '之', '於', '在', '為', '其', '並')
+    while i < len(valid):
+        curr = valid[i]
+        while i + 1 < len(valid):
+            nxt = valid[i + 1]
+            is_new_section = bool(re.match(r'^(?:[0-9]{1,2}\.|\b[A-Z]\b|【|\[|[一二三四五六七八九十]、)', nxt))
+            if is_new_section:
+                break
+
+            # 判斷是否需要跨行合併：
+            # 1. 下一行以從屬介詞/助詞開頭（如「的藥物血中濃度監測」）
+            # 2. 當前行以逗號或連接詞結尾
+            # 3. 當前行長度充足且結尾為英文字母/數字，下一行以中文從屬詞或小寫開頭
+            needs_merge = False
+            if nxt.startswith(dep_starts) or (nxt and nxt[0].islower()):
+                needs_merge = True
+            elif curr.endswith(cont_ends):
+                needs_merge = True
+            elif not curr.endswith(end_punc) and len(curr) >= 10:
+                # 結尾是英文字母（如 digoxin）且無句末標點符號
+                if curr[-1].isalnum() and not curr.endswith(end_punc):
+                    needs_merge = True
+
+            if needs_merge:
+                curr = curr + ' ' + nxt
+                i += 1
+            else:
+                break
+        merged.append(curr)
+        i += 1
+
+    return '\n'.join(merged)
 
 
 def extract_relevant_clinical_lines(text: str, keywords: list, max_lines: int = 4, min_len: int = 6) -> list:
@@ -776,6 +827,7 @@ def generate_patient_answer(matched_intent: str, drug_info: dict, q_id=None, pro
     adverse_raw = drug_info.get('adverse_effects', '')
     warnings_raw = drug_info.get('special_warnings', '')
     patient_raw = drug_info.get('patient_info', '')
+    full_raw = drug_info.get('full_text', '') or drug_info.get('insert_text', '')
 
     indications_clean = clean_clinical_html(indications_raw)
     dosage_clean = clean_clinical_html(dosage_raw)
@@ -786,6 +838,7 @@ def generate_patient_answer(matched_intent: str, drug_info: dict, q_id=None, pro
     adverse_clean = clean_clinical_html(adverse_raw)
     warnings_clean = clean_clinical_html(warnings_raw)
     patient_clean = clean_clinical_html(patient_raw)
+    full_clean = clean_clinical_html(full_raw)
 
     s = drug_name_str.lower()
     is_injection = any(kw in dosage_form for kw in ['注射', '針', '輸注', '凍晶', '點滴']) or any(kw in s for kw in ['inj', 'injection'])
@@ -1076,7 +1129,7 @@ def generate_patient_answer(matched_intent: str, drug_info: dict, q_id=None, pro
     # =========================================================================
     if matched_intent == 'geriatric_use':
         ans = f"### 💡 【結論速覽（{cname} 65 歲以上長輩能使用嗎？需要調整劑量嗎？）】\n"
-        ger_corpus = f"{special_clean}\n{dosage_clean}\n{precautions_clean}"
+        ger_corpus = f"{special_clean}\n{dosage_clean}\n{precautions_clean}\n{interactions_clean}\n{full_clean}"
         ger_lines = extract_relevant_clinical_lines(
             ger_corpus, 
             ['老年', '高齡', '65歲', '80歲', '長輩', '長者'], 
@@ -1093,14 +1146,39 @@ def generate_patient_answer(matched_intent: str, drug_info: dict, q_id=None, pro
             for gl in ger_lines:
                 ans += f"* 📋 {gl}\n"
             ans += "\n"
+
+            # 若仿單摘錄提及 Digoxin（毛地黃），主動以白話解釋機轉與因果關係，消除民眾疑慮
+            if any('digoxin' in gl.lower() for gl in ger_lines):
+                ans += f"ℹ️ **【為什麼官方仿單特別提醒 Digoxin（毛地黃）？】**：\n"
+                ans += f"* **交互作用機轉**：本藥品（PPI 胃藥）強力抑制胃酸、提高胃部 pH 值，會使心臟強心劑 **Digoxin（地高辛/毛地黃）在腸胃道的吸收率增加 10%~30%**。\n"
+                ans += f"* **臨床安全提醒**：Digoxin 本身治療安全範圍極窄，若長輩因心臟疾病**同時有在服用 Digoxin**，又使用高劑量本藥時，醫師應加強抽血監測 Digoxin 濃度以防中毒；**若長輩未服用心臟藥 Digoxin，則完全不受影響**。\n\n"
         else:
             ans += f"⚠️ **【官方仿單目前無老年專屬減量數據】**：\n"
             ans += f"* 經查核官方仿單全文，未特別針對高齡長者訂定獨立之劑量調減階梯。高齡長者使用時，醫師通常會依整體生理機能（如腎功能、肝代謝率）審慎評估起始劑量。\n\n"
 
-        ans += f"### 📋 【長輩照護三大重點】\n"
-        ans += f"1. **預防起身頭暈跌倒**：許多降血糖、降血壓藥在治療初期容易引起姿勢性低血壓，**長輩起床或站起時動作務必放慢**，坐穩幾秒再站立。\n"
-        ans += f"2. **跨科用藥整合**：長輩若同時看多科門診（心臟科、新陳代謝科、骨科），請攜帶所有藥袋到藥局請藥師做**「用藥整合」**，避免重複用藥或藥物相剋。\n"
-        ans += f"3. **確認按時規律**：建議使用分裝藥盒或日曆標記，協助長輩確認每天是否有按時服藥，避免重複多吃一餐。\n\n"
+        is_ppi = any(k in f"{cname} {ename}".lower() for k in ['esomeprazole', 'omeprazole', 'lansoprazole', 'pantoprazole', 'rabeprazole', 'dexilant', 'nexium', '易舒康', '耐適恩', '泰克胃通', '得喜胃通', '胃所樂'])
+        is_bp_dm = any(k in f"{cname} {ename}".lower() for k in ['metformin', 'glipizide', 'glimepiride', 'amlodipine', 'valsartan', 'losartan', 'forxiga', 'jardiance', '福適佳', '恩美糖', '脈優', '壓博爾'])
+
+        if is_ppi:
+            ans += f"### 📋 【胃腸長輩照護三大重點（質子幫浦抑制劑 PPI）】\n"
+            ans += f"1. **整粒吞服切勿咬碎**：本藥為特殊抗胃酸腸溶膜衣錠，請配溫開水**整粒吞服**，不可壓碎、磨粉或咬碎，以防有效成分被胃酸破壞失去活性。\n"
+            ans += f"2. **最佳服藥時間**：建議於**每天早晨早餐前 30 分鐘至 1 小時空腹服用**，能達到全天最佳抑酸與胃黏膜保護效果。\n"
+            ans += f"3. **長期使用骨質與電解質評估**：高齡長輩若長期（1 年以上）連續使用 PPI 類胃藥，建議適度補充鈣質與維生素 D 以維護骨骼健康；若合併使用利尿劑或 Digoxin，應配合醫師定期抽血檢驗血鎂與電解質。\n\n"
+        elif is_injection:
+            ans += f"### 📋 【高齡針劑照護三大重點】\n"
+            ans += f"1. **醫院專業監測施打**：本藥品為專用針劑，施打時醫護團隊會連續監測血壓、心律與生理反應。\n"
+            ans += f"2. **注意注射部位**：若打針處紅腫熱痛、滲液漏針，請立即向護理師反映。\n"
+            ans += f"3. **施打後多平躺休息**：施打後請於床上平躺休息，切勿急遽自行下床以防跌倒。\n\n"
+        elif is_bp_dm:
+            ans += f"### 📋 【長輩照護三大重點（心血管與代謝用藥）】\n"
+            ans += f"1. **預防起身頭暈跌倒**：降血壓與降血糖藥物在治療初期可能引起姿位性低血壓或輕微頭暈，**長輩起床或站起時動作務必放慢**，坐穩幾秒再站立。\n"
+            ans += f"2. **跨科用藥整合**：長輩若同時看多科門診（心臟科、新陳代謝科、骨科），請攜帶所有藥袋到藥局請藥師做**「用藥整合」**，避免重複用藥或藥物相剋。\n"
+            ans += f"3. **確認按時規律**：建議使用分裝藥盒或日曆標記，協助長輩確認每天是否有按時服藥，避免重複多吃一餐。\n\n"
+        else:
+            ans += f"### 📋 【長輩安全用藥三大守則】\n"
+            ans += f"1. **跨科用藥整合**：長輩若同時看多科門診，看診時請**主動出示目前正在服用的所有藥袋**，由醫師與藥師檢查是否有重複用藥或交互作用。\n"
+            ans += f"2. **遵醫囑定時服藥**：建議使用分裝藥盒或用藥日曆，避免長輩忘記服藥或不小心重複多吃一次。\n"
+            ans += f"3. **觀察身體反應**：長輩肝腎代謝與排泄較慢，剛開始服藥時家屬請多留意長者精神、食慾與活動力狀況。\n\n"
         ans += f"### 🚨 【何時應回診諮詢醫師】\n"
         ans += f"* 長輩用藥後若常抱怨頭暈站不穩、容易迷糊嗜睡、食慾大幅變差或精神恍惚，請盡早陪同回診由醫師評估。"
         return ans
@@ -2584,9 +2662,9 @@ def _smart_clinical_qa_core(question: str, drug_info: dict, q_id=None) -> str:
         ans = f"### 🎯 【AI 臨床問題理解】\n"
         ans += f"您向臨床 AI 諮詢的是：**65 歲以上高齡長者是否可以使用本藥品，以及老年人是否需要調整劑量**。\n\n"
 
-        search_geri = f"{special_populations}\n{dosage}\n{precautions}\n{full_text}"
+        search_geri = clean_clinical_html(f"{special_populations}\n{dosage}\n{precautions}\n{interactions}\n{full_text}")
         geri_keywords = ['老年', '老人', '高齡', '65歲', '75歲', '長者', '年長者', 'geriatric']
-        dose_keywords = ['劑量', '調整', '起始', '減量', '清除率', '腎功能', '差異', '監測', '不需調整']
+        dose_keywords = ['劑量', '調整', '起始', '減量', '清除率', '腎功能', '差異', '監測', '不需調整', '不須調整']
 
         lines = [l.strip() for l in search_geri.split('\n') if l.strip()]
         matched_geri_lines = []
@@ -2599,6 +2677,7 @@ def _smart_clinical_qa_core(question: str, drug_info: dict, q_id=None) -> str:
         is_sglt2 = any(k in s for k in ['dapagliflozin', 'forxiga', '福適佳', 'empagliflozin', 'jardiance'])
         is_sitagliptin = any(k in s for k in ['sitagliptin', 'januvia', '佳糖維'])
         is_depakine = any(k in s for k in ['depakine', '帝拔癲', 'valproate'])
+        is_ppi = any(k in f"{cname} {ename}".lower() for k in ['esomeprazole', 'omeprazole', 'lansoprazole', 'pantoprazole', 'rabeprazole', 'dexilant', 'nexium', '易舒康', '耐適恩', '泰克胃通', '得喜胃通', '胃所樂'])
 
         ans += f"### 💡 【核心白話解答（官方仿單查核結果）】\n"
 
@@ -2653,21 +2732,30 @@ def _smart_clinical_qa_core(question: str, drug_info: dict, q_id=None) -> str:
             for l in matched_geri_lines[:4]:
                 ans += f"* {l}\n"
             ans += f"\n"
-            ans += f"### 📋 【官方仿單核定依據與章節條文】\n"
-            ans += f"* **依據官方仿單【第 6 節 特殊族群之使用 / 6.5 老年族群】記載**：\n"
+
+            if any('digoxin' in l.lower() for l in matched_geri_lines):
+                ans += f"ℹ️ **【長輩併用強心劑 Digoxin 重要警訊與臨床機轉】**：\n"
+                ans += f"* **藥理機轉**：官方仿單載明，質子幫浦抑制劑 (PPI) 降低胃內酸度後，會使心臟強心劑 **Digoxin（毛地黃）之生體可用率上升 10%~30%**。\n"
+                ans += f"* **長者臨床監測**：老年人常因心血管疾病併用 Digoxin，且長者腎臟廓清率較低；若使用高劑量本品時，必須加強 Digoxin 之血中濃度監測以防毛地黃中毒。\n\n"
+
+            ans += f"### 📋 【官方仿單核定依據與條文摘錄】\n"
             for l in matched_geri_lines[:2]:
                 ans += f"> {l}\n"
             ans += f"\n"
         else:
             ans += f"⚠️ **【官方核定仿單未提及 65 歲以上高齡長者之專屬劑量調整指引】**：\n"
-            ans += f"* 經全面檢索衛生福利部食品藥物管理署 (TFDA) 最新核定之本藥品（{cname} {ename}）仿單全文（特別是【第 6 節 特殊族群之使用 / 6.5 老年族群】與【第 3 節 用法用量】），**仿單中並未特別針對老年患者訂定獨立之劑量調減階梯**。\n"
+            ans += f"* 經全面檢索衛生福利部食品藥物管理署 (TFDA) 最新核定之本藥品（{cname} {ename}）官方仿單全文，**仿單中並未特別針對老年患者訂定獨立之劑量調減階梯**。\n"
             ans += f"* 臨床常規高齡長者使用時，通常由處方醫師依病患整體身體機能評估。\n\n"
             ans += f"### 📋 【請諮詢專業醫療人員】\n"
             ans += f"1. 65 歲以上高齡長者往往伴隨生理機能（如腎功能、肝臟代謝率）生理性衰退，且多重慢性病用藥衝突機率顯著上升。\n"
             ans += f"2. 請遵從主治醫師處方指示，初次服藥時請家屬特別留意長者服藥後是否出現頭暈、嗜睡、步態不穩跌倒或腸胃不適等徵候。\n\n"
 
-        ans += f"### 🚨 【用藥安全與就醫警訊】\n"
-        ans += f"* 高齡長者變換姿勢（如早晨起床、坐下站立）時應動作放緩，預防姿位性低血壓頭暈跌倒骨折。"
+        if is_ppi:
+            ans += f"### 🚨 【用藥安全與就醫警訊（PPI 腸胃用藥）】\n"
+            ans += f"* 高齡長輩用藥期間若出現嚴重水瀉持續不止、腹痛發燒（警惕艱難梭菌感染），或出現抽搐肌肉痙攣（低血鎂警訊），請立即停藥並就醫！"
+        else:
+            ans += f"### 🚨 【用藥安全與就醫警訊】\n"
+            ans += f"* 高齡長者變換姿勢（如早晨起床、坐下站立）時應動作放緩，預防姿位性低血壓頭暈跌倒骨折。"
         return ans
 
     # =========================================================================
