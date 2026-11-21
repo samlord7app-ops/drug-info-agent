@@ -713,7 +713,7 @@ def extract_relevant_clinical_lines(text: str, keywords: list, max_lines: int = 
 
 def extract_pediatric_clinical_lines(text: str, max_lines: int = 4) -> tuple:
     """
-    智能萃取小兒用藥條文，嚴格防止將成人體重劑量或老年歲數誤判為小兒指引
+    智能萃取小兒用藥條文，嚴格防止將成人體重劑量、老年歲數或純防誤食警語誤判為小兒指引
     回傳: (matched_lines: list, is_not_established: bool, explicit_approved: bool)
     """
     cleaned = clean_clinical_html(text)
@@ -724,6 +724,7 @@ def extract_pediatric_clinical_lines(text: str, max_lines: int = 4) -> tuple:
 
     child_kws = ['小兒', '兒童', '青少年', '嬰兒', '幼兒', '新生兒', '未滿18歲', '18歲以下', '12歲以下', '兒科', 'pediatric', 'children', 'adolescent', 'infant']
     neg_kws = ['尚未確立', '尚未建立', '無可用數據', '無可用資料', '無相關數據', '不建議使用', '不建議用於', '未經確立', '安全性及有效性尚未', '缺乏臨床試驗', '安全性與有效性尚未', '無安全性及療效資料']
+    storage_kws = ['伸手不及', '拿不到', '無法取得', '不易觸及', '避免兒童誤食', '避免誤食', '置於兒童無法', '置於小兒無法', '放置於兒童', '存放於兒童']
 
     for line in cleaned.split('\n'):
         l = line.strip()
@@ -731,6 +732,10 @@ def extract_pediatric_clinical_lines(text: str, max_lines: int = 4) -> tuple:
             continue
         # 必須包含明確兒童實體詞，絕不因單純出現 'kg' 或 '體重' 或 '75歲' 就誤抓成人體重劑量
         if not any(ck in l for ck in child_kws):
+            continue
+
+        # 排除純防誤食/存放警語（例如：請存放於兒童伸手不及之處）
+        if any(sk in l for sk in storage_kws) and not any(cw in l for cw in ['尚未確立', '尚未建立', '有效性', '安全與有效', '臨床試驗', '核准', '適應症', '劑量', 'mg/kg']):
             continue
 
         if any(neg in l for neg in neg_kws):
@@ -978,8 +983,8 @@ def generate_patient_answer(matched_intent: str, drug_info: dict, q_id=None, pro
                 ans += f"* 📋 {pl}\n"
             ans += "\n"
         else:
-            ans += f"⚠️ **【缺乏充分人體臨床安全性試驗，非醫師評估明確需要切勿自行服用】**：\n"
-            ans += f"* 官方仿單未有充分人體試驗證實安全無虞時，懷孕前 3 個月（胎兒器官形成期）與哺乳期間，切勿自行服藥。\n\n"
+            ans += f"⚠️ **【官方仿單目前無充分人體臨床試驗資料】**：\n"
+            ans += f"* 經查核官方仿單全文，目前未刊載充分之孕婦人體安全性分級試驗數據。懷孕與哺乳期間非經專科醫師評估效益明確大於風險前，切勿擅自使用。\n\n"
 
         ans += f"### 📋 【孕媽咪與哺乳安全守則】\n"
         ans += f"1. **看診主動告知**：若已懷孕、計畫備孕或正在餵母奶，**看診任何科別時務必第一時間主動告知醫師**。\n"
@@ -996,11 +1001,21 @@ def generate_patient_answer(matched_intent: str, drug_info: dict, q_id=None, pro
         ped_corpus = f"{dosage_clean}\n{special_clean}\n{precautions_clean}\n{indications_clean}"
         ped_lines, is_not_est, is_appr = extract_pediatric_clinical_lines(ped_corpus, max_lines=3)
 
-        if is_metalyse:
-            ans += f"🚫 **【官方仿單明定：METALYSE 在 18 歲以下兒童族群之安全性與有效性尚未確立，不建議使用】**：\n"
-            ans += f"* **適應症與族群限制**：本藥品衛福部核准用於「成人急性心肌梗塞 (STEMI) 與成人急性缺血性中風 (AIS)」。小兒罹患此類動脈粥狀硬化血栓阻塞極為罕見，臨床試驗並無兒童族群之確效劑量數據。\n"
-            ans += f"* ⚠️ **重大出血致命風險**：本藥為強力組織纖溶酶原活化劑（血栓溶解劑），具有嚴重致命性顱內出血與全身大出血風險；**官方仿單明確載明：目前不建議使用於 18 歲以下兒童及青少年**！\n"
-            ans += f"* **兒科急重症例外**：若極罕見情況下小兒加護病房專科團隊經審慎評估需專案使用，必須由小兒心臟專科醫師依病童狀況於具備連續監測之加護病房施打。\n\n"
+        if ped_lines and is_not_est:
+            ans += f"🚫 **【官方仿單載明小兒安全性未確立】**：\n"
+            for pl in ped_lines:
+                ans += f"* 📋 {pl}\n"
+            ans += f"* **用藥安全提醒**：官方仿單載明本藥於 18 歲以下兒童或青少年的安全性與有效性尚未建立；未經小兒專科醫師評估前，切勿擅自給予兒童使用。\n\n"
+        elif ped_lines and is_appr:
+            ans += f"👶 **【衛福部核定仿單小兒年齡與劑量指引摘錄】**：\n"
+            for pl in ped_lines:
+                ans += f"* 📋 {pl}\n"
+            ans += "\n"
+        elif ped_lines:
+            ans += f"👶 **【衛福部核定仿單兒童用藥相關條文摘錄】**：\n"
+            for pl in ped_lines:
+                ans += f"* 📋 {pl}\n"
+            ans += "\n"
         elif is_metformin:
             ans += f"👶 **【官方仿單核准兒童使用年齡規範】**：\n"
             ans += f"* **核准年齡**：衛福部核准 Metformin 可用於 **10 歲（或特定劑型 12 歲）及以上** 之兒童與青少年第二型糖尿病患者。\n"
@@ -1011,30 +1026,11 @@ def generate_patient_answer(matched_intent: str, drug_info: dict, q_id=None, pro
             ans += f"* 3 個月至 12 歲兒童建議劑量為每次 15 mg/kg（每日兩次，單日最高上限 1 公克）；小於 3 個月大嬰兒安全性尚未確立。\n\n"
         elif is_keytruda:
             ans += f"👶 **【黑色素瘤核准用於 12 歲以上兒童（每 3 週 2 mg/kg，單次最高 200 mg）；其餘癌症小兒安全性尚未確立】**。\n\n"
-        elif is_glp1 or is_sglt2:
-            ans += f"🚫 **【官方仿單明定：18 歲以下兒童及青少年之安全性與有效性尚未建立，不建議使用】**：\n"
-            ans += f"* 目前尚無針對 18 歲以下小兒之確效臨床劑量數據，未經小兒新陳代謝專科醫師評估，切勿擅自給予兒童使用。\n\n"
-        elif is_not_est:
-            ans += f"🚫 **【官方仿單載明：在 18 歲以下兒童或青少年的安全性與有效性尚未建立】**：\n"
-            if ped_lines:
-                for pl in ped_lines:
-                    ans += f"* 📋 {pl}\n"
-            else:
-                ans += f"* 官方仿單通常僅核准於成人；未經小兒專科醫師評估前，切勿擅自給予 18 歲以下兒童使用。\n"
-            ans += "\n"
-        elif ped_lines and is_appr:
-            ans += f"👶 **【衛福部核定仿單小兒年齡與劑量指引摘錄】**：\n"
-            for pl in ped_lines:
-                ans += f"* 📋 {pl}\n"
-            ans += "\n"
-        elif ped_lines:
-            ans += f"👶 **【衛福部核定仿單兒童注意事項摘錄】**：\n"
-            for pl in ped_lines:
-                ans += f"* 📋 {pl}\n"
-            ans += "\n"
         else:
-            ans += f"⚠️ **【官方核定仿單載明：在 18 歲以下兒童或青少年的安全性與有效性尚未建立】**：\n"
-            ans += f"* 官方仿單僅核准於成人；未經小兒專科醫師評估前，切勿擅自給予 18 歲以下兒童使用。\n\n"
+            # 仿單全文無小兒資料 - 剛性條件：絕對不可以回答仿單上沒有寫到的內容，如果仿單沒有寫，就寫明「仿單目前無相關資料」
+            ans += f"⚠️ **【官方仿單目前無相關資料】**\n\n"
+            ans += f"* **仿單查核結果**：經全面檢索衛生福利部食品藥物管理署 (TFDA) 最新核定之「{cname}」官方仿單全文，**仿單中目前並無記載 18 歲以下兒童或小兒族群之適用年齡、使用指引或劑量數據**（僅核准於成人適應症）。\n"
+            ans += f"* **用藥安全提醒**：由於官方仿單目前無兒童族群之相關安全性與劑量指引，若病患為兒童或青少年，未經專科醫師審慎評估明確效益大於風險前切勿擅自使用。\n\n"
 
         # 依劑型與藥品性質智慧分流照護指引，杜絕不合邏輯之罐頭
         is_subq_pen = is_glp1 or any(kw in f"{cname} {ename} {dosage_form}".lower() for kw in ['筆', 'pen', 'kwikpen', '預填', '隨選'])
@@ -1098,8 +1094,8 @@ def generate_patient_answer(matched_intent: str, drug_info: dict, q_id=None, pro
                 ans += f"* 📋 {gl}\n"
             ans += "\n"
         else:
-            ans += f"👴 **【可以使用，但建議從較低起始劑量開始】**：\n"
-            ans += f"* 高齡長輩可以使用本藥品。但因長輩肝臟、腎臟代謝與排泄藥物機能較為遲緩，醫師通常會建議**「從較低的起始劑量開始」**，再視耐受性逐步調整。\n\n"
+            ans += f"⚠️ **【官方仿單目前無老年專屬減量數據】**：\n"
+            ans += f"* 經查核官方仿單全文，未特別針對高齡長者訂定獨立之劑量調減階梯。高齡長者使用時，醫師通常會依整體生理機能（如腎功能、肝代謝率）審慎評估起始劑量。\n\n"
 
         ans += f"### 📋 【長輩照護三大重點】\n"
         ans += f"1. **預防起身頭暈跌倒**：許多降血糖、降血壓藥在治療初期容易引起姿勢性低血壓，**長輩起床或站起時動作務必放慢**，坐穩幾秒再站立。\n"
@@ -2519,43 +2515,39 @@ def _smart_clinical_qa_core(question: str, drug_info: dict, q_id=None) -> str:
         ans += f"您向臨床 AI 諮詢的是：**兒童、小兒族群之適用最小年齡限制，以及小孩是否需要調整劑量（依年齡或體重 mg/kg 給藥）**。\n\n"
 
         search_ped = f"{special_populations}\n{dosage}\n{precautions}\n{contraindications}\n{full_text}"
-        ped_keywords = ['小兒', '兒童', '兒科', '新生兒', '嬰兒', '幼兒', '青少年', '歲', '月齡', '18歲', '12歲', '6歲', '2歲']
-        dose_keywords = ['劑量', '體重', 'mg/kg', '安全性', '有效性', '尚未確立', '不建議', '禁用', '公斤', '適用']
+        ped_keywords = ['小兒', '兒童', '兒科', '新生兒', '嬰兒', '幼兒', '青少年', '未滿18歲', '18歲以下', '12歲以下', 'pediatric', 'children', 'adolescent', 'infant']
+        dose_keywords = ['劑量', '體重', 'mg/kg', '安全性', '有效性', '尚未確立', '尚未建立', '不建議', '禁用', '公斤', '適用', '臨床試驗', '核准']
+        storage_filter = ['伸手不及', '拿不到', '無法取得', '不易觸及', '避免兒童誤食', '避免誤食', '放置於兒童', '存放於兒童']
 
         lines = [l.strip() for l in search_ped.split('\n') if l.strip()]
         matched_ped_lines = []
         for l in lines:
             if any(pk in l.lower() for pk in ped_keywords) and any(dk in l.lower() for dk in dose_keywords) and len(l) > 10:
+                if any(sf in l for sf in storage_filter) and not any(cw in l for cw in ['尚未確立', '尚未建立', '有效性', '安全與有效', '臨床試驗', '核准', 'mg/kg', '劑量']):
+                    continue
                 if l not in matched_ped_lines:
                     matched_ped_lines.append(l)
 
         s = drug_name_str.lower()
-        is_sglt2 = any(k in s for k in ['dapagliflozin', 'forxiga', '福適佳', 'empagliflozin', 'jardiance'])
-        is_sitagliptin = any(k in s for k in ['sitagliptin', 'januvia', '佳糖維'])
-        is_depakine = any(k in s for k in ['depakine', '帝拔癲', 'valproate'])
-        is_metalyse = any(k in s for k in ['metalyse', 'tenecteplase', '栓體溶'])
+        is_keytruda = any(k in s for k in ['pembrolizumab', 'keytruda', '吉舒達'])
 
         ans += f"### 💡 【核心白話解答（官方仿單查核結果）】\n"
 
-        if is_metalyse:
-            ans += f"🚫 **【官方仿單明定：METALYSE 在 18 歲以下兒童族群之安全性與有效性尚未確立，不建議使用】**：\n"
-            ans += f"1. **官方核定年齡限制**：衛福部核准適應症為成人急性心肌梗塞 (STEMI) 與成人急性缺血性中風 (AIS)。仿單【特殊族群之使用 / 6.4 兒童族群】明確標記：**「METALYSE 在 18 歲以下兒童及青少年病人之安全性與有效性尚未確立，目前無可用數據，不建議使用於兒童族群」**。\n"
-            ans += f"2. **重大臨床安全考量**：動脈血栓阻塞在兒科極為罕見；本品為強效組織纖溶酶原活化劑，具有嚴重致命性顱內出血與全身大出血風險，未經兒童心血管重症專科團隊專案審慎評估，嚴禁使用。\n\n"
-            ans += f"### 📋 【官方仿單核定依據與章節條文】\n"
-            ans += f"* **依據官方仿單【第 6 節 特殊族群之使用 / 6.4 兒童族群】記載**：\n"
-            ans += f"> 尚未確立 METALYSE 在 18 歲以下兒童及青少年病人的安全性與有效性。無可用數據。不建議使用於兒童族群。\n\n"
-        elif is_sglt2 or is_sitagliptin:
-            ans += f"👶 **【官方仿單明定：18 歲以下兒童安全性尚未確立】**：\n"
-            ans += f"1. **年齡限制**：官方核定仿單明訂**「本藥品在 18 歲以下兒童及青少年病人之安全性與有效性尚未確立」**。\n"
-            ans += f"2. **劑量指引**：目前沒有可用於小兒族群之確效劑量數據，因此**不建議用於 18 歲以下之兒童或青少年**！\n\n"
-            ans += f"### 📋 【官方仿單核定依據與章節條文】\n"
-            ans += f"* **依據官方仿單【第 6 節 特殊族群之使用 / 6.4 兒童族群】記載**：\n"
-            if matched_ped_lines:
-                for l in matched_ped_lines[:2]:
-                    ans += f"> {l}\n"
-                ans += "\n"
+        if matched_ped_lines:
+            is_unestablished = any(any(neg in l for neg in ['尚未確立', '尚未建立', '無可用數據', '不建議使用', '缺乏臨床試驗', '未經確立']) for l in matched_ped_lines)
+            if is_unestablished:
+                ans += f"🚫 **【官方仿單載明：小兒族群之安全性與有效性尚未確立】**：\n"
+                ans += f"1. **官方核定年齡限制**：衛福部核定仿單載明，在 18 歲以下兒童或青少年的安全性與有效性尚未建立。\n"
+                ans += f"2. **劑量指引**：目前沒有可用於小兒族群之確效劑量數據，因此不建議擅自用於兒童或青少年。\n\n"
             else:
-                ans += f"> 尚未確立本品在 18 歲以下兒童及青少年病人的安全性與有效性。無可用數據。\n\n"
+                ans += f"👶 **【官方仿單載明之兒童年齡限制與小兒劑量指引】**：\n"
+                for l in matched_ped_lines[:4]:
+                    ans += f"* {l}\n"
+                ans += "\n"
+            ans += f"### 📋 【官方仿單核定依據與條文摘錄】\n"
+            for l in matched_ped_lines[:2]:
+                ans += f"> {l}\n"
+            ans += "\n"
         elif is_keytruda:
             ans += f"👶 **【官方仿單明定：Keytruda 兒童與青少年族群指引】**：\n"
             ans += f"1. **黑色素瘤 (Melanoma) 核准年齡與小兒劑量**：\n"
@@ -2563,36 +2555,20 @@ def _smart_clinical_qa_core(question: str, drug_info: dict, q_id=None) -> str:
             ans += f"   * **建議劑量**：每 3 週一次 **2 mg/kg（單次最高劑量不超過 200 mg）**，以靜脈輸注方式給藥 30 分鐘。\n"
             ans += f"2. **其他適應症之年齡限制**：\n"
             ans += f"   * 除黑色素瘤外，在其他兒科癌症或 12 歲以下幼童病患中，其安全性與有效性尚未確立。\n\n"
-            ans += f"### 📋 【官方仿單核定依據與章節條文】\n"
-            ans += f"* **依據官方仿單【第 3 節 用法用量 / 小兒病人】與【第 6 節 特殊族群之使用 / 6.4 兒童族群】記載**：\n"
-            ans += f"> 黑色素瘤 12 歲及以上的兒童病人建議劑量為每 3 週一次 2 mg/kg（至多 200 mg），靜脈輸注 30 分鐘。其他適應症在兒童之安全性與有效性尚未確立。\n\n"
-        elif is_depakine:
-            ans += f"👶 **【官方仿單明定：兒童使用與極重度肝毒性黑框警訊】**：\n"
-            ans += f"1. **3 歲以下幼兒極高危險警訊**：仿單明載【黑框警訊】：**3 歲以下嬰幼兒（特別是合併先天代謝障礙、嚴重癲癇伴隨智力遲緩或多重抗癲癇用藥者），發生致命性肝毒性之風險最高**！\n"
-            ans += f"2. **單方療法優先**：對於 3 歲以下幼兒若必須使用，強烈建議單獨給藥，並密切監測肝功能。\n"
-            ans += f"3. **劑量調整指引**：兒童起始劑量通常為每日 10~15 mg/kg，每週逐步增加 5~10 mg/kg 至達到理想控制劑量（常規維持劑量約 20~30 mg/kg/day，分成 2 至 3 次給藥）。\n\n"
-            ans += f"### 📋 【官方仿單核定依據與章節條文】\n"
-            ans += f"* **依據官方仿單【第 3 節 用法用量 / 兒童族群】與【第 5 節 特殊警語】記載**：\n"
-            if matched_ped_lines:
-                for l in matched_ped_lines[:3]:
-                    ans += f"> {l}\n"
-                ans += "\n"
-            else:
-                ans += f"> 兒童常規起始劑量為 10-15 mg/kg/day，3 歲以下幼兒具有最高之致命性肝衰竭風險。\n\n"
-        elif matched_ped_lines:
-            ans += f"👶 **【官方仿單載明之兒童年齡限制與小兒劑量指引】**：\n"
-            for l in matched_ped_lines[:4]:
-                ans += f"* {l}\n"
-            ans += f"\n"
-            ans += f"### 📋 【官方仿單核定依據與章節條文】\n"
-            ans += f"* **依據官方仿單【第 6 節 特殊族群之使用 / 6.4 兒童族群】或【第 3 節 用法用量】記載**：\n"
-            for l in matched_ped_lines[:2]:
-                ans += f"> {l}\n"
-            ans += f"\n"
+            ans += f"### 📋 【官方仿單核定依據與條文摘錄】\n"
+            ans += f"* 黑色素瘤 12 歲及以上的兒童病人建議劑量為每 3 週一次 2 mg/kg（至多 200 mg），靜脈輸注 30 分鐘。其他適應症在兒童之安全性與有效性尚未確立。\n\n"
         else:
-            ans += f"⚠️ **【官方核定仿單未提及兒童之最小適用年齡或小兒劑量調整數據】**：\n"
-            ans += f"* 經全面檢索衛生福利部食品藥物管理署 (TFDA) 最新核定之本藥品（{cname} {ename}）仿單全文（特別是【第 6 節 特殊族群之使用 / 6.4 兒童族群】與【第 3 節 用法用量】），**仿單中並未特別記載兒童之最小安全年齡限制，或標明「兒童及 18 歲以下青少年之安全性與有效性尚未確立」**。\n"
-            ans += f"* 成人口服藥物多未進行小兒對照臨床試驗，未經原廠確效之年齡切勿擅自服用。\n\n"
+            ans += f"⚠️ **【官方仿單目前無相關資料】**\n\n"
+            ans += f"* **官方仿單查核結果**：經全面檢索衛生福利部食品藥物管理署 (TFDA) 最新核定之本藥品（{cname} {ename}）官方仿單全文，**仿單中目前並無記載 18 歲以下兒童或小兒族群之適用年齡、使用指引、安全性或小兒劑量調整數據**。\n"
+            ans += f"* **臨床專科考量**：在官方核定仿單未登載兒童安全性與有效性試驗數據之情況下，若病患為兒童或青少年，未經專科醫師審慎評估明確效益大於風險前，切勿擅自給予小兒使用。\n\n"
+            ans += f"### 📋 【官方仿單核定依據與章節條文】\n"
+            ans += f"* 經查核本藥品官方仿單全文，目前並未刊載兒童族群專屬章節或小兒劑量數據。\n\n"
+
+        if is_injection:
+            ans += f"### 📋 【兒童急重症專案用藥安全原則（專用針劑）】\n"
+            ans += f"1. **本藥品為醫院專用針劑**：施打必須在具備連續監測設備之醫療院所由專科醫師執行。\n"
+            ans += f"2. **劑量由專科醫師嚴謹計算**：針劑劑量需經小兒專科醫師依病童狀況或體表面積嚴謹換算，絕不可擅自套用成人口服觀念推論。\n\n"
+        else:
             ans += f"### 📋 【請諮詢專業醫療人員（小兒科專科醫師）】\n"
             ans += f"1. 兒童各器官發育尚未成熟，藥物代謝速率與成人截然不同。成人口服錠劑**切勿自行掰半或磨粉給小孩服用**，以防劑量計算錯誤導致中毒或不良反應。\n"
             ans += f"2. 若幼童有相關症狀，請務必帶往醫院小兒科看診，由小兒專科醫師依病童年齡、體重精準計算適合之兒童專用劑型（如口服水劑、滴劑或懸液劑）。\n\n"
